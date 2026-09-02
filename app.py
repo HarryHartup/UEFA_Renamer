@@ -178,17 +178,24 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
 # --- SIDEBAR PANEL CONTROL ---
 with st.sidebar:
     st.markdown("### ⚙️ SYSTEM SETTINGS")
-    enable_ai_pass = st.checkbox("Enable Pass 2 (Gemini Vision AI Fallback)", value=True)
+    scan_mode = st.radio(
+        "SCAN MODE",
+        [
+            "Double Pass (Fast Name Check → AI Fallback)",
+            "Filename Matching Only (No AI)",
+            "AI Vision Only"
+        ]
+    )
 
     api_key = ""
-    if enable_ai_pass:
+    if "Only (No AI)" not in scan_mode:
         if "GEMINI_API_KEY" in st.secrets:
             api_key = st.secrets["GEMINI_API_KEY"]
             st.success("✓ Milking your API Keys")
         else:
             api_key = st.text_input("Gemini API Key", type="password")
             if not api_key:
-                st.warning("⚠️ Enter a Google Gemini API key for Pass 2.")
+                st.warning("⚠️ Enter a Google Gemini API key.")
 
 # --- STRING NORMALIZATION ENGINE ---
 def clean_text(text):
@@ -304,7 +311,7 @@ if uploaded_files:
     if images_to_process:
         st.write(f"Total Processing Queue: **{len(images_to_process)}** media files ready.")
 
-# --- VISION AI RECOGNITION (PASS 2 ONLY) ---
+# --- VISION AI RECOGNITION ---
 def identify_with_gemini(image_bytes, key):
     genai.configure(api_key=key)
     model = genai.GenerativeModel('gemini-2.5-flash')
@@ -318,72 +325,80 @@ def identify_with_gemini(image_bytes, key):
     parts = response.text.strip().split(",")
     return parts[0].strip() if len(parts) > 0 else response.text.strip()
 
-# --- SECTION 3: SEQUENTIAL TWO-PASS EXECUTION ---
+# --- SECTION 3: SCAN EXECUTION ---
 st.markdown("<br>", unsafe_allow_html=True)
-if st.button("EXECUTE TWO-PASS BATCH PROCESS"):
+if st.button("EXECUTE SCAN ENGINE"):
     if df_db is None or df_db.empty:
         st.error("No valid roster loaded.")
     elif not images_to_process:
         st.error("No image assets provided.")
-    elif enable_ai_pass and not api_key:
-        st.error("Gemini API Key required when Pass 2 is enabled.")
+    elif "Only (No AI)" not in scan_mode and not api_key:
+        st.error("Gemini API Key required for AI modes.")
     else:
         zip_buffer = io.BytesIO()
         matched_db_indices = set()
         unmatched_images = []
         
-        pass1_matched = {}
-        pass2_queue = {}
+        final_matched = {}
+        ai_queue = {}
 
         items = list(images_to_process.items())
         total_items = len(items)
 
-        st.markdown("#### ⚡ PASS 1: FAST LOCAL FILENAME MATCHING")
-        p1_bar = st.progress(0)
+        # ==========================================
+        # MODE 1 & 2: LOCAL FILENAME MATCHING PASS
+        # ==========================================
+        if "AI Vision Only" not in scan_mode:
+            st.markdown("#### ⚡ PASS 1: FAST LOCAL FILENAME MATCHING")
+            p1_bar = st.progress(0)
 
-        # PASS 1: LOCAL ACCENT-INSENSITIVE MATCHING
-        for idx, (img_path, img_bytes) in enumerate(items):
-            filename = os.path.basename(img_path)
-            folder_dir = os.path.dirname(img_path)
-            cleaned_filename = clean_text(filename)
-            cleaned_folder = clean_text(folder_dir)
-            player_matched = None
-            matched_row_idx = None
+            for idx, (img_path, img_bytes) in enumerate(items):
+                filename = os.path.basename(img_path)
+                folder_dir = os.path.dirname(img_path)
+                cleaned_filename = clean_text(filename)
+                cleaned_folder = clean_text(folder_dir)
+                player_matched = None
+                matched_row_idx = None
 
-            for db_idx, row in df_db.iterrows():
-                clean_db_player = clean_text(row['Player'])
-                clean_db_team = clean_text(row['Team'])
-                player_parts = clean_db_player.split()
-                last_name = player_parts[-1] if player_parts else clean_db_player
+                for db_idx, row in df_db.iterrows():
+                    clean_db_player = clean_text(row['Player'])
+                    clean_db_team = clean_text(row['Team'])
+                    player_parts = clean_db_player.split()
+                    last_name = player_parts[-1] if player_parts else clean_db_player
 
-                if clean_db_player in cleaned_filename or (len(last_name) > 3 and last_name in cleaned_filename):
-                    if cleaned_folder and clean_db_team and clean_db_team in cleaned_folder:
-                        player_matched = row
-                        matched_row_idx = db_idx
-                        break
-                    elif not player_matched:
-                        player_matched = row
-                        matched_row_idx = db_idx
+                    if clean_db_player in cleaned_filename or (len(last_name) > 3 and last_name in cleaned_filename):
+                        if cleaned_folder and clean_db_team and clean_db_team in cleaned_folder:
+                            player_matched = row
+                            matched_row_idx = db_idx
+                            break
+                        elif not player_matched:
+                            player_matched = row
+                            matched_row_idx = db_idx
 
-            if player_matched is not None:
-                pass1_matched[img_path] = (player_matched, img_bytes)
-                matched_db_indices.add(matched_row_idx)
-                st.write(f"⚡ **[Pass 1 Match]** `{img_path}` → Renamed to `{player_matched['Number']}` ({player_matched['Player']})")
-            else:
-                pass2_queue[img_path] = img_bytes
+                if player_matched is not None:
+                    final_matched[img_path] = (player_matched, img_bytes)
+                    matched_db_indices.add(matched_row_idx)
+                    st.write(f"⚡ **[Name Match]** `{img_path}` → Renamed to `{player_matched['Number']}` ({player_matched['Player']})")
+                else:
+                    ai_queue[img_path] = img_bytes
 
-            p1_bar.progress((idx + 1) / total_items)
+                p1_bar.progress((idx + 1) / total_items)
 
-        st.success(f"Pass 1 Complete! Resolved {len(pass1_matched)} / {total_items} images locally without API calls.")
+            st.success(f"Filename Matching Complete! Resolved {len(final_matched)} / {total_items} images locally.")
+        else:
+            # If AI Vision Only, pass all images straight to AI queue
+            ai_queue = dict(items)
 
-        # PASS 2: GEMINI VISION AI FALLBACK
-        if pass2_queue and enable_ai_pass:
+        # ==========================================
+        # MODE 1 & 3: GEMINI AI VISION PASS
+        # ==========================================
+        if ai_queue and "Only (No AI)" not in scan_mode:
             st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown(f"#### 🧠 PASS 2: GEMINI AI VISION RECOGNITION ({len(pass2_queue)} Remaining)")
+            st.markdown(f"#### 🧠 GEMINI AI VISION SCAN ({len(ai_queue)} Images)")
             p2_bar = st.progress(0)
-            pass2_items = list(pass2_queue.items())
+            ai_items = list(ai_queue.items())
 
-            for idx, (img_path, img_bytes) in enumerate(pass2_items):
+            for idx, (img_path, img_bytes) in enumerate(ai_items):
                 filename = os.path.basename(img_path)
                 player_matched = None
                 matched_row_idx = None
@@ -399,25 +414,27 @@ if st.button("EXECUTE TWO-PASS BATCH PROCESS"):
                             matched_row_idx = db_idx
                             break
                 except Exception as e:
-                    st.warning(f"Pass 2 AI bypass on {filename}: {e}")
+                    st.warning(f"AI bypass on {filename}: {e}")
 
                 if player_matched is not None:
-                    pass1_matched[img_path] = (player_matched, img_bytes)
+                    final_matched[img_path] = (player_matched, img_bytes)
                     matched_db_indices.add(matched_row_idx)
-                    st.write(f"🧠 **[Pass 2 Match]** `{img_path}` → Renamed to `{player_matched['Number']}` ({player_matched['Player']})")
+                    st.write(f"🧠 **[AI Match]** `{img_path}` → Renamed to `{player_matched['Number']}` ({player_matched['Player']})")
                 else:
-                    st.write(f"✕ `{img_path}` → Unmatched after both passes.")
+                    st.write(f"✕ `{img_path}` → Unmatched.")
                     unmatched_images.append(img_path)
 
-                p2_bar.progress((idx + 1) / len(pass2_items))
+                p2_bar.progress((idx + 1) / len(ai_items))
 
-        elif pass2_queue and not enable_ai_pass:
-            for img_path in pass2_queue.keys():
+        elif ai_queue and "Only (No AI)" in scan_mode:
+            for img_path in ai_queue.keys():
                 unmatched_images.append(img_path)
 
+        # ==========================================
         # WRITE OUTPUT ZIP & RENDER CONSOLES
+        # ==========================================
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_out:
-            for img_path, (player_row, img_bytes) in pass1_matched.items():
+            for img_path, (player_row, img_bytes) in final_matched.items():
                 folder_dir = os.path.dirname(img_path)
                 original_ext = os.path.splitext(os.path.basename(img_path))[1]
                 number = str(player_row['Number'])
@@ -449,7 +466,7 @@ if st.button("EXECUTE TWO-PASS BATCH PROCESS"):
             else:
                 st.success("All roster players received image assets!")
 
-        if len(pass1_matched) > 0:
+        if len(final_matched) > 0:
             st.download_button(
                 label="📦 DOWNLOAD RENAMED ZIP ARCHIVE",
                 data=zip_buffer.getvalue(),
