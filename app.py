@@ -6,6 +6,7 @@ from PIL import Image
 import google.generativeai as genai
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="UCL SQUAD RENAME ENGINE",
@@ -13,15 +14,60 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- INJECT BACKGROUND VIDEO & STYLES ---
+# --- INJECT FULLSCREEN AUTOPLAY VIDEO COMPONENT ---
+# Renders in a dedicated iframe behind Streamlit's DOM
+components.html(
+    """
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body, html { width: 100%; height: 100%; overflow: hidden; background: #020617; }
+      
+      /* Background Video Element */
+      #bg-video {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        min-width: 100%;
+        min-height: 100%;
+        width: auto;
+        height: auto;
+        z-index: 1;
+        transform: translate(-50%, -50%);
+        object-fit: cover;
+        opacity: 0.55;
+        filter: brightness(0.6) contrast(1.2) hue-rotate(190deg);
+      }
+      
+      /* Dark Tint Gradient Overlay */
+      .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 2;
+        background: radial-gradient(circle at center, rgba(2, 6, 23, 0.2) 0%, rgba(2, 6, 23, 0.85) 100%);
+      }
+    </style>
+    
+    <video id="bg-video" autoplay loop muted playsinline preload="auto">
+      <source src="https://commondatastreaming.gvt1.com/videoplayback?id=c8065a9539304917&itag=18&source=youtube" type="video/mp4">
+      <source src="https://assets.mixkit.co/videos/preview/mixkit-football-stadium-lights-and-field-41551-large.mp4" type="video/mp4">
+    </video>
+    <div class="overlay"></div>
+    """,
+    height=0,
+)
+
+# --- INJECT EDITORIAL CSS STYLES ---
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800;900&display=swap');
 
 :root {
     --bg-main: #020617;
-    --bg-card: rgba(8, 15, 35, 0.78);
-    --border-color: rgba(0, 240, 255, 0.25);
+    --bg-card: rgba(8, 15, 35, 0.82);
+    --border-color: rgba(0, 240, 255, 0.3);
     --text-primary: #F8FAFC;
     --accent-cyan: #00F0FF;
     --accent-volt: #E2F163;
@@ -30,40 +76,25 @@ st.markdown("""
 /* Hide Streamlit default UI elements */
 #MainMenu, footer, header { visibility: hidden; }
 
+/* Set iframe component to fixed background position behind Streamlit */
+iframe[title="streamlit.components.v1.html"] {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: -1 !important;
+    border: none !important;
+    pointer-events: none !important;
+}
+
 .stApp {
-    background-color: var(--bg-main) !important;
+    background-color: transparent !important;
     font-family: 'Space Grotesk', sans-serif !important;
     color: var(--text-primary) !important;
 }
 
-/* Fixed Video Background Layer */
-#bg-video {
-    position: fixed;
-    right: 0;
-    bottom: 0;
-    min-width: 100%;
-    min-height: 100%;
-    width: auto;
-    height: auto;
-    z-index: -2;
-    object-fit: cover;
-    opacity: 0.50; /* Adjust video opacity (0.0 to 1.0) */
-    filter: brightness(0.65) contrast(1.2) hue-rotate(190deg);
-}
-
-/* Dark Radial Gradient Overlay for High Contrast Text */
-.video-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: -1;
-    background: radial-gradient(circle at center, rgba(2, 6, 23, 0.3) 0%, rgba(2, 6, 23, 0.85) 100%);
-    pointer-events: none;
-}
-
-/* Glassmorphic Main Layout Container */
+/* Glassmorphic Container */
 .block-container {
     max-width: 1050px !important;
     padding-top: 2.5rem !important;
@@ -72,12 +103,12 @@ st.markdown("""
     backdrop-filter: blur(20px) !important;
     -webkit-backdrop-filter: blur(20px) !important;
     border: 1px solid var(--border-color);
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
     margin-top: 2rem !important;
     margin-bottom: 2rem !important;
 }
 
-/* Editorial Header Typography */
+/* Header Typography */
 .editorial-header {
     border-bottom: 2px solid var(--accent-cyan);
     padding-bottom: 1.5rem;
@@ -96,7 +127,7 @@ st.markdown("""
     color: #FFFFFF;
     margin: 0;
     line-height: 0.95;
-    text-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+    text-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
 }
 
 .editorial-subtitle {
@@ -116,33 +147,27 @@ st.markdown("""
     letter-spacing: 0.2em;
     text-transform: uppercase;
     color: var(--accent-cyan);
-    background: rgba(0, 240, 255, 0.08);
+    background: rgba(0, 240, 255, 0.12);
     font-weight: 700;
 }
 
-/* Input Fields & Textareas */
+/* Form Controls & Dropzone */
 .stRadio > div {
-    background: rgba(11, 19, 43, 0.85) !important;
+    background: rgba(11, 19, 43, 0.9) !important;
     border: 1px solid var(--border-color) !important;
     padding: 0.5rem !important;
 }
 
 .stTextInput > div > div > input, .stTextArea > div > div > textarea {
-    background: rgba(11, 19, 43, 0.85) !important;
+    background: rgba(11, 19, 43, 0.9) !important;
     border: 1px solid var(--border-color) !important;
     color: var(--text-primary) !important;
     font-family: 'Space Grotesk', sans-serif !important;
     padding: 0.75rem !important;
 }
 
-.stTextInput > div > div > input:focus, .stTextArea > div > div > textarea:focus {
-    border-color: var(--accent-cyan) !important;
-    box-shadow: 4px 4px 0px var(--accent-cyan) !important;
-}
-
-/* Dropzone Styling */
 [data-testid="stFileUploadDropzone"] {
-    background: rgba(11, 19, 43, 0.85) !important;
+    background: rgba(11, 19, 43, 0.9) !important;
     border: 1px dashed rgba(0, 240, 255, 0.4) !important;
 }
 
@@ -167,19 +192,12 @@ st.markdown("""
     box-shadow: 6px 6px 0px #000000, 6px 6px 0px 2px var(--accent-volt) !important;
 }
 
-/* Sidebar Customization */
 [data-testid="stSidebar"] {
-    background-color: rgba(8, 15, 35, 0.9) !important;
+    background-color: rgba(8, 15, 35, 0.92) !important;
     backdrop-filter: blur(15px) !important;
     border-right: 1px solid var(--border-color) !important;
 }
 </style>
-
-<!-- BACKGROUND VIDEO ELEMENT -->
-<video id="bg-video" autoplay loop muted playsinline>
-    <source src="https://assets.mixkit.co/videos/preview/mixkit-football-stadium-lights-and-field-41551-large.mp4" type="video/mp4">
-</video>
-<div class="video-overlay"></div>
 
 <!-- EDITORIAL HEADER -->
 <div class="editorial-header">
