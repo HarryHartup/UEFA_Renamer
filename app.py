@@ -10,7 +10,8 @@ import streamlit as st
 st.set_page_config(
     page_title="UCL SQUAD RENAME ENGINE",
     page_icon="⚽",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"  # Forces sidebar visible on initial load
 )
 
 # --- UEFA CHAMPIONS LEAGUE PURE CSS ANIMATED MESH BACKDROP ---
@@ -27,10 +28,10 @@ st.markdown("""
     --accent-volt: #E2F163;
 }
 
-/* Hide Streamlit default UI chrome */
-#MainMenu, footer, header { visibility: hidden; }
+/* Hide Streamlit default header/footer but KEEP sidebar toggle */
+#MainMenu, footer { visibility: hidden; }
 
-/* Global Background Lock (Prevents Grey Flash) */
+/* Global Background Lock */
 html, body, [data-testid="stAppViewContainer"], .stApp {
     background-color: var(--bg-main) !important;
     font-family: 'Space Grotesk', sans-serif !important;
@@ -159,10 +160,16 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
     box-shadow: 6px 6px 0px #000000, 6px 6px 0px 2px var(--accent-volt) !important;
 }
 
+/* Explicit Sidebar Styling for Visual Contrast */
 [data-testid="stSidebar"] {
-    background-color: rgba(8, 15, 35, 0.92) !important;
-    backdrop-filter: blur(15px) !important;
+    background-color: rgba(8, 15, 35, 0.95) !important;
+    backdrop-filter: blur(20px) !important;
     border-right: 1px solid var(--border-color) !important;
+    padding-top: 2rem !important;
+}
+
+[data-testid="stSidebar"] * {
+    color: var(--text-primary) !important;
 }
 </style>
 
@@ -176,22 +183,23 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
 </div>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR CONTROL ---
-st.sidebar.markdown("### ⚙️ SYSTEM SETTINGS")
-mode = st.sidebar.radio(
-    "RECOGNITION ENGINE", 
-    ["Gemini Vision AI", "Filename Matching"]
-)
+# --- SIDEBAR PANEL CONTROL ---
+with st.sidebar:
+    st.markdown("### ⚙️ SYSTEM SETTINGS")
+    mode = st.radio(
+        "RECOGNITION ENGINE", 
+        ["Gemini Vision AI", "Filename Matching"]
+    )
 
-api_key = ""
-if mode == "Gemini Vision AI":
-    if "GEMINI_API_KEY" in st.secrets:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        st.sidebar.success("✓ Secure AI Uplink Active")
-    else:
-        api_key = st.sidebar.text_input("Gemini API Key", type="password")
-        if not api_key:
-            st.sidebar.warning("⚠️ Enter a Google Gemini API key.")
+    api_key = ""
+    if mode == "Gemini Vision AI":
+        if "GEMINI_API_KEY" in st.secrets:
+            api_key = st.secrets["GEMINI_API_KEY"]
+            st.success("✓ Secure AI Uplink Active")
+        else:
+            api_key = st.text_input("Gemini API Key", type="password")
+            if not api_key:
+                st.warning("⚠️ Enter a Google Gemini API key.")
 
 # --- HELPER FUNCTIONS ---
 def normalize_df(df):
@@ -304,7 +312,8 @@ if uploaded_files:
 # --- VISION AI RECOGNITION ---
 def identify_with_gemini(image_bytes, key):
     genai.configure(api_key=key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Updated to active Flash model endpoint
+    model = genai.GenerativeModel('gemini-2.5-flash')
     img = Image.open(io.BytesIO(image_bytes))
     prompt = (
         "Identify the soccer player in this image. "
