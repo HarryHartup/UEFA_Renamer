@@ -283,33 +283,54 @@ if df_db is not None and not df_db.empty:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# --- SECTION 2: ASSETS & SUBFOLDERS ---
+# --- SECTION 2: ASSETS, SUBFOLDERS & DIRECTORY PATHS ---
 st.markdown("##### [02] MEDIA ASSETS & FOLDERS")
-uploaded_files = st.file_uploader(
-    "Drop Individual Images OR a .ZIP Folder",
-    type=["png", "jpg", "jpeg", "webp", "zip"],
-    accept_multiple_files=True
-)
+asset_input_method = st.radio("Asset Source", ["Drag & Drop Files / .ZIP Archive", "Local Folder Directory Path"], horizontal=True)
 
 images_to_process = {}
 
-if uploaded_files:
-    for f in uploaded_files:
-        if f.name.lower().endswith(".zip"):
-            try:
-                with zipfile.ZipFile(f, 'r') as z:
-                    for file_info in z.infolist():
-                        if not file_info.is_dir() and not file_info.filename.startswith('__MACOSX'):
-                            if file_info.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                                images_to_process[file_info.filename] = z.read(file_info)
-                st.success(f"Extracted {len(images_to_process)} assets from zip archive: {f.name}")
-            except Exception as e:
-                st.error(f"Error reading zip structure: {e}")
-        elif f.name.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-            images_to_process[f.name] = f.read()
+if asset_input_method == "Drag & Drop Files / .ZIP Archive":
+    uploaded_files = st.file_uploader(
+        "Drop Individual Images OR a .ZIP Folder",
+        type=["png", "jpg", "jpeg", "webp", "zip"],
+        accept_multiple_files=True
+    )
 
-    if images_to_process:
-        st.write(f"Total Processing Queue: **{len(images_to_process)}** media files ready.")
+    if uploaded_files:
+        for f in uploaded_files:
+            if f.name.lower().endswith(".zip"):
+                try:
+                    with zipfile.ZipFile(f, 'r') as z:
+                        for file_info in z.infolist():
+                            if not file_info.is_dir() and not file_info.filename.startswith('__MACOSX'):
+                                if file_info.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                                    images_to_process[file_info.filename] = z.read(file_info)
+                    st.success(f"Extracted {len(images_to_process)} assets from zip archive: {f.name}")
+                except Exception as e:
+                    st.error(f"Error reading zip structure: {e}")
+            elif f.name.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                images_to_process[f.name] = f.read()
+
+else:
+    folder_path = st.text_input("Paste Local Folder Path (e.g. C:/Users/Name/Pictures/SquadFolder)", placeholder="e.g. /Users/yourusername/Downloads/UCL_Images")
+    if folder_path and os.path.exists(folder_path):
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                    full_p = os.path.join(root, file)
+                    rel_p = os.path.relpath(full_p, folder_path)
+                    try:
+                        with open(full_p, "rb") as img_f:
+                            images_to_process[rel_p] = img_f.read()
+                    except Exception as e:
+                        st.warning(f"Could not read file {full_p}: {e}")
+        if images_to_process:
+            st.success(f"Found {len(images_to_process)} image files inside `{folder_path}`")
+    elif folder_path:
+        st.error(f"Directory path `{folder_path}` does not exist or is inaccessible.")
+
+if images_to_process:
+    st.write(f"Total Processing Queue: **{len(images_to_process)}** media files ready.")
 
 # --- VISION AI RECOGNITION ---
 def identify_with_gemini(image_bytes, key):
@@ -345,9 +366,7 @@ if st.button("EXECUTE SCAN ENGINE"):
         items = list(images_to_process.items())
         total_items = len(items)
 
-        # ==========================================
         # MODE 1 & 2: LOCAL FILENAME MATCHING PASS
-        # ==========================================
         if "AI Vision Only" not in scan_mode:
             st.markdown("#### ⚡ PASS 1: FAST LOCAL FILENAME MATCHING")
             p1_bar = st.progress(0)
@@ -386,12 +405,9 @@ if st.button("EXECUTE SCAN ENGINE"):
 
             st.success(f"Filename Matching Complete! Resolved {len(final_matched)} / {total_items} images locally.")
         else:
-            # If AI Vision Only, pass all images straight to AI queue
             ai_queue = dict(items)
 
-        # ==========================================
         # MODE 1 & 3: GEMINI AI VISION PASS
-        # ==========================================
         if ai_queue and "Only (No AI)" not in scan_mode:
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown(f"#### 🧠 GEMINI AI VISION SCAN ({len(ai_queue)} Images)")
@@ -430,9 +446,7 @@ if st.button("EXECUTE SCAN ENGINE"):
             for img_path in ai_queue.keys():
                 unmatched_images.append(img_path)
 
-        # ==========================================
         # WRITE OUTPUT ZIP & RENDER CONSOLES
-        # ==========================================
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_out:
             for img_path, (player_row, img_bytes) in final_matched.items():
                 folder_dir = os.path.dirname(img_path)
