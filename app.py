@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import unicodedata
 import zipfile
 from PIL import Image
 import google.generativeai as genai
@@ -11,10 +12,10 @@ st.set_page_config(
     page_title="UCL SQUAD RENAME ENGINE",
     page_icon="⚽",
     layout="wide",
-    initial_sidebar_state="expanded"  # Forces sidebar visible on initial load
+    initial_sidebar_state="expanded"
 )
 
-# --- UEFA CHAMPIONS LEAGUE PURE CSS ANIMATED MESH BACKDROP ---
+# --- GLOBAL STYLES & ANIMATED BACKGROUND ---
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800;900&display=swap');
@@ -28,7 +29,7 @@ st.markdown("""
     --accent-volt: #E2F163;
 }
 
-/* Hide Streamlit default header/footer but KEEP sidebar toggle */
+/* Hide default Streamlit chrome */
 #MainMenu, footer { visibility: hidden; }
 
 /* Global Background Lock */
@@ -62,7 +63,7 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
     100% { background-position: 0% 100%; }
 }
 
-/* Glassmorphic Main Card Container */
+/* Glassmorphic Card Container */
 .block-container {
     max-width: 1050px !important;
     padding-top: 2.5rem !important;
@@ -119,7 +120,7 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
     font-weight: 700;
 }
 
-/* Form Inputs & Dropzone */
+/* Form Inputs & Upload Zone */
 .stRadio > div {
     background: rgba(11, 19, 43, 0.9) !important;
     border: 1px solid var(--border-color) !important;
@@ -160,7 +161,7 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
     box-shadow: 6px 6px 0px #000000, 6px 6px 0px 2px var(--accent-volt) !important;
 }
 
-/* Explicit Sidebar Styling for Visual Contrast */
+/* Sidebar Custom Styling */
 [data-testid="stSidebar"] {
     background-color: rgba(8, 15, 35, 0.95) !important;
     backdrop-filter: blur(20px) !important;
@@ -201,7 +202,15 @@ with st.sidebar:
             if not api_key:
                 st.warning("⚠️ Enter a Google Gemini API key.")
 
-# --- HELPER FUNCTIONS ---
+# --- STRING NORMALIZATION ENGINE ---
+def clean_text(text):
+    if not text:
+        return ""
+    text = unicodedata.normalize('NFD', str(text))
+    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    text = text.replace('_', ' ').replace('-', ' ')
+    return ' '.join(text.split()).lower()
+
 def normalize_df(df):
     col_map = {}
     for col in df.columns:
@@ -256,10 +265,15 @@ db_input_method = st.radio("Input Mode", ["Upload File", "Paste Roster Text"], h
 df_db = None
 
 if db_input_method == "Upload File":
-    db_file = st.file_uploader("Upload Excel (.xlsx) or CSV File", type=["xlsx", "csv"])
+    db_file = st.file_uploader("Upload Excel (.xlsx), CSV, or JSON File", type=["xlsx", "csv", "json"])
     if db_file:
         try:
-            df_raw = pd.read_excel(db_file) if db_file.name.endswith(".xlsx") else pd.read_csv(db_file)
+            if db_file.name.endswith(".xlsx"):
+                df_raw = pd.read_excel(db_file)
+            elif db_file.name.endswith(".json"):
+                df_raw = pd.read_json(db_file)
+            else:
+                df_raw = pd.read_csv(db_file)
             df_db = normalize_df(df_raw)
             st.success(f"✓ Roster Active: {len(df_db)} Records")
         except Exception as e:
@@ -312,7 +326,6 @@ if uploaded_files:
 # --- VISION AI RECOGNITION ---
 def identify_with_gemini(image_bytes, key):
     genai.configure(api_key=key)
-    # Updated to active Flash model endpoint
     model = genai.GenerativeModel('gemini-2.5-flash')
     img = Image.open(io.BytesIO(image_bytes))
     prompt = (
@@ -324,7 +337,7 @@ def identify_with_gemini(image_bytes, key):
     parts = response.text.strip().split(",")
     return parts[0].strip() if len(parts) > 0 else response.text.strip()
 
-# --- SECTION 3: EXECUTION & DOWNLOAD ---
+# --- SECTION 3: ACCENT-INSENSITIVE EXECUTION & LEFTOVER AUDIT ---
 st.markdown("<br>", unsafe_allow_html=True)
 if st.button("EXECUTE BATCH PROCESS"):
     if df_db is None or df_db.empty:
@@ -336,6 +349,10 @@ if st.button("EXECUTE BATCH PROCESS"):
     else:
         zip_buffer = io.BytesIO()
         processed_count = 0
+        
+        # Tracking sets for audit logs
+        matched_db_indices = set()
+        unmatched_images = []
 
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_out:
             progress_bar = st.progress(0)
@@ -346,21 +363,38 @@ if st.button("EXECUTE BATCH PROCESS"):
                 folder_dir = os.path.dirname(img_path)
                 original_ext = os.path.splitext(filename)[1]
                 player_matched = None
+                matched_row_idx = None
 
+                cleaned_filename = clean_text(filename)
+
+                # MODE A: GEMINI VISION AI
                 if mode == "Gemini Vision AI":
                     try:
                         detected_name = identify_with_gemini(img_bytes, api_key)
-                        matches = df_db[df_db['Player'].str.contains(detected_name, case=False, na=False)]
-                        if not matches.empty:
-                            player_matched = matches.iloc[0]
+                        cleaned_detected = clean_text(detected_name)
+
+                        for db_idx, row in df_db.iterrows():
+                            clean_db_player = clean_text(row['Player'])
+                            if clean_db_player in cleaned_detected or cleaned_detected in clean_db_player:
+                                player_matched = row
+                                matched_row_idx = db_idx
+                                break
                     except Exception as e:
                         st.warning(f"Detection bypass on {filename}: {e}")
-                else:
-                    for _, row in df_db.iterrows():
-                        if str(row['Player']).lower() in filename.lower():
+
+                # MODE B / FALLBACK: ACCENT-INSENSITIVE FILENAME MATCHING
+                if player_matched is None:
+                    for db_idx, row in df_db.iterrows():
+                        clean_db_player = clean_text(row['Player'])
+                        player_parts = clean_db_player.split()
+                        last_name = player_parts[-1] if player_parts else clean_db_player
+
+                        if clean_db_player in cleaned_filename or (len(last_name) > 3 and last_name in cleaned_filename):
                             player_matched = row
+                            matched_row_idx = db_idx
                             break
 
+                # Save into output zip if matched
                 if player_matched is not None:
                     number = str(player_matched['Number'])
                     new_filename = f"{number}{original_ext}"
@@ -369,13 +403,41 @@ if st.button("EXECUTE BATCH PROCESS"):
                     zip_out.writestr(out_path, img_bytes)
                     st.write(f"✓ **{img_path}** → Renamed to `{out_path}` ({player_matched['Player']})")
                     processed_count += 1
+                    if matched_row_idx is not None:
+                        matched_db_indices.add(matched_row_idx)
                 else:
                     st.write(f"✕ **{img_path}** → Unmatched in active roster.")
+                    unmatched_images.append(img_path)
 
                 progress_bar.progress((idx + 1) / len(items))
 
+        # --- BATCH AUDIT SUMMARY (LEFTOVER DETECTION) ---
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("### 📊 BATCH AUDIT & LEFTOVER LOGS")
+        
+        # Calculate leftover database names
+        unmatched_db = df_db[~df_db.index.isin(matched_db_indices)]
+
+        audit_col1, audit_col2 = st.columns(2)
+
+        with audit_col1:
+            st.markdown(f"##### ⚠️ Extra Unmatched Images ({len(unmatched_images)})")
+            if unmatched_images:
+                for un_img in unmatched_images:
+                    st.caption(f"• `{un_img}`")
+            else:
+                st.success("Zero leftover images. Every file was matched!")
+
+        with audit_col2:
+            st.markdown(f"##### ⚠️ Leftover Roster Players ({len(unmatched_db)})")
+            if not unmatched_db.empty:
+                for _, row in unmatched_db.iterrows():
+                    st.caption(f"• **#{row['Number']}** {row['Player']} ({row['Team']})")
+            else:
+                st.success("Zero leftover players. Every roster entry received an image!")
+
+        # DOWNLOAD BUTTON
         if processed_count > 0:
-            st.success(f"Processing Complete: {processed_count} assets renamed.")
             st.download_button(
                 label="📦 DOWNLOAD RENAMED ZIP ARCHIVE",
                 data=zip_buffer.getvalue(),
