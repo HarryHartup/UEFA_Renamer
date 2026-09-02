@@ -14,15 +14,24 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- INJECT FULLSCREEN AUTOPLAY VIDEO COMPONENT ---
-# Renders in a dedicated iframe behind Streamlit's DOM
+# --- IMMEDIATE GLOBAL BACKGROUND LOCK (Prevents Grey Flash) ---
+st.markdown("""
+<style>
+/* Lock root, HTML, body, and app viewport to solid deep dark immediately */
+html, body, [data-testid="stAppViewContainer"], .stApp {
+    background-color: #020617 !important;
+    background: #020617 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --- FULLSCREEN AUTOPLAY VIDEO COMPONENT ---
 components.html(
     """
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body, html { width: 100%; height: 100%; overflow: hidden; background: #020617; }
       
-      /* Background Video Element */
       #bg-video {
         position: fixed;
         top: 50%;
@@ -34,11 +43,10 @@ components.html(
         z-index: 1;
         transform: translate(-50%, -50%);
         object-fit: cover;
-        opacity: 0.55;
-        filter: brightness(0.6) contrast(1.2) hue-rotate(190deg);
+        opacity: 0.50;
+        filter: brightness(0.65) contrast(1.2) hue-rotate(190deg);
       }
       
-      /* Dark Tint Gradient Overlay */
       .overlay {
         position: fixed;
         top: 0;
@@ -59,13 +67,12 @@ components.html(
     height=0,
 )
 
-# --- INJECT EDITORIAL CSS STYLES ---
+# --- EDITORIAL STYLING OVERRIDES ---
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800;900&display=swap');
 
 :root {
-    --bg-main: #020617;
     --bg-card: rgba(8, 15, 35, 0.82);
     --border-color: rgba(0, 240, 255, 0.3);
     --text-primary: #F8FAFC;
@@ -73,10 +80,10 @@ st.markdown("""
     --accent-volt: #E2F163;
 }
 
-/* Hide Streamlit default UI elements */
+/* Hide Streamlit default chrome */
 #MainMenu, footer, header { visibility: hidden; }
 
-/* Set iframe component to fixed background position behind Streamlit */
+/* Set iframe component to fixed background position */
 iframe[title="streamlit.components.v1.html"] {
     position: fixed !important;
     top: 0 !important;
@@ -86,12 +93,6 @@ iframe[title="streamlit.components.v1.html"] {
     z-index: -1 !important;
     border: none !important;
     pointer-events: none !important;
-}
-
-.stApp {
-    background-color: transparent !important;
-    font-family: 'Space Grotesk', sans-serif !important;
-    color: var(--text-primary) !important;
 }
 
 /* Glassmorphic Container */
