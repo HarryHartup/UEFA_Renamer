@@ -235,7 +235,6 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
 
     rows = []
     for line in lines:
-        # Split by tabs or pipes flexibly
         parts = [p.strip() for p in re.split(r'[\t|]', line) if p.strip()]
         
         if len(parts) >= 3:
@@ -244,12 +243,10 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
             team_name = parts[1] if len(parts) == 3 else parts[1]
             rows.append({'Player': player_name, 'Team': team_name, 'Number': squad_num})
         elif len(parts) == 2:
-            # Player + Number
             m_num = re.search(r'\d+', parts[1])
             if m_num:
                 rows.append({'Player': parts[0], 'Team': default_team, 'Number': m_num.group(0)})
         else:
-            # RegEx extract name and trailing number
             m_end = re.search(r'^(.*?)\s+(\d+)$', line)
             if m_end:
                 rows.append({'Player': m_end.group(1).strip(), 'Team': default_team, 'Number': m_end.group(2).strip()})
@@ -348,7 +345,8 @@ if images_to_process:
 # --- VISION AI RECOGNITION ---
 def identify_with_gemini(image_bytes, key):
     genai.configure(api_key=key)
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    # Updated to active model endpoint
+    model = genai.GenerativeModel('gemini-3.6-flash')
     img = Image.open(io.BytesIO(image_bytes))
     prompt = (
         "Identify the soccer player and their club team in this image. "
@@ -379,9 +377,7 @@ if st.button("EXECUTE SCAN ENGINE"):
         items = list(images_to_process.items())
         total_items = len(items)
 
-        # ==========================================
         # MODE 1 & 2: LOCAL FILENAME MATCHING PASS
-        # ==========================================
         if "AI Vision Only" not in scan_mode:
             st.markdown("#### ⚡ PASS 1: FAST LOCAL FILENAME MATCHING")
             p1_bar = st.progress(0)
@@ -399,13 +395,11 @@ if st.button("EXECUTE SCAN ENGINE"):
                     strict_player = clean_strict(player_name_raw)
                     player_words = set(clean_words(player_name_raw))
 
-                    # Criterion 1: Direct strict substring match (e.g., 'jenspetterhauge' inside 'jenspetterhaugeheadshots...')
                     if strict_player and strict_player in strict_filename:
                         player_matched = row
                         matched_row_idx = db_idx
                         break
 
-                    # Criterion 2: All core words in player's name appear in the filename
                     if player_words and player_words.issubset(file_words):
                         player_matched = row
                         matched_row_idx = db_idx
@@ -424,9 +418,7 @@ if st.button("EXECUTE SCAN ENGINE"):
         else:
             ai_queue = dict(items)
 
-        # ==========================================
         # MODE 1 & 3: GEMINI AI VISION PASS
-        # ==========================================
         if ai_queue and "Only (No AI)" not in scan_mode:
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown(f"#### 🧠 GEMINI AI VISION SCAN ({len(ai_queue)} Images)")
@@ -465,9 +457,7 @@ if st.button("EXECUTE SCAN ENGINE"):
             for img_path in ai_queue.keys():
                 unmatched_images.append(img_path)
 
-        # ==========================================
         # WRITE OUTPUT ZIP & RENDER CONSOLES
-        # ==========================================
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_out:
             for img_path, (player_row, img_bytes) in final_matched.items():
                 folder_dir = os.path.dirname(img_path)
