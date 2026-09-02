@@ -4,6 +4,7 @@ import os
 import zipfile
 import io
 import re
+import base64
 from PIL import Image
 import google.generativeai as genai
 
@@ -13,159 +14,233 @@ st.set_page_config(page_title="Squad Image Studio", layout="wide", page_icon="�
 # --- STYLE ---
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
 
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 header {background-color: transparent !important;}
 
 .stApp {
-    background: radial-gradient(circle at 50% 0%, #10204f 0%, #050a1c 55%, #03050f 100%) !important;
+    background: #050914 !important;
 }
 
 .block-container {
-    background: rgba(7, 14, 38, 0.72) !important;
-    backdrop-filter: blur(10px) !important;
-    -webkit-backdrop-filter: blur(10px) !important;
-    border: 1px solid rgba(180, 195, 230, 0.14);
-    border-radius: 6px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    background: rgba(9, 15, 34, 0.6) !important;
+    border: 1px solid rgba(180, 195, 230, 0.10);
+    border-radius: 8px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.55);
     padding: 3rem !important;
+    padding-top: 0 !important;
     margin-top: 2.5rem !important;
     margin-bottom: 3rem !important;
-    max-width: 880px !important;
-    animation: fadeUp 0.6s ease;
-}
-@keyframes fadeUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    max-width: 920px !important;
+    overflow: hidden;
 }
 
 h1, h2, h3, p, label, .stRadio > div, .stMarkdown, .stText, span {
     font-family: 'Inter', sans-serif !important;
-    color: #e7ecfb !important;
+    color: #dde3f5 !important;
 }
 
-/* Title: restrained, structural, no rainbow shimmer */
-h1 {
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-weight: 700 !important;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-size: 2.6rem !important;
-    color: #ffffff !important;
-    text-align: left;
-    border-bottom: 1px solid rgba(180, 195, 230, 0.18);
-    padding-bottom: 1rem;
-    margin-bottom: 0 !important;
+/* ---------------- FULL-BLEED CINEMATIC HERO ---------------- */
+.hero-bleed {
     position: relative;
+    margin: 0 -3rem 2.6rem -3rem;
+    padding: 4.4rem 3rem 3.2rem 3rem;
+    overflow: hidden;
+    border-bottom: 1px solid rgba(200, 210, 240, 0.12);
 }
-h1::after {
-    content: "";
+.hero-bleed .scene {
     position: absolute;
-    left: 0; bottom: -1px;
-    width: 64px; height: 2px;
-    background: linear-gradient(90deg, #c9d4ee, transparent);
+    inset: 0;
+    opacity: 0;
+    animation: crossfade 16s ease-in-out infinite;
 }
-.subtitle {
+.hero-bleed .scene-a {
+    background:
+        radial-gradient(circle at 18% 20%, rgba(58,90,190,0.55) 0%, transparent 55%),
+        radial-gradient(circle at 82% 75%, rgba(212,175,55,0.18) 0%, transparent 50%),
+        linear-gradient(160deg, #0b1330 0%, #050914 80%);
+    animation-delay: 0s;
+}
+.hero-bleed .scene-b {
+    background:
+        radial-gradient(circle at 78% 15%, rgba(90,60,180,0.45) 0%, transparent 55%),
+        radial-gradient(circle at 15% 80%, rgba(212,175,55,0.15) 0%, transparent 50%),
+        linear-gradient(200deg, #0a1230 0%, #050914 80%);
+    animation-delay: 8s;
+}
+@keyframes crossfade {
+    0%   { opacity: 0; }
+    8%   { opacity: 1; }
+    42%  { opacity: 1; }
+    50%  { opacity: 0; }
+    100% { opacity: 0; }
+}
+.hero-bleed .grain {
+    position: absolute; inset: 0;
+    background-image: radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.25) 0%, transparent 60%),
+                       radial-gradient(1px 1px at 70% 60%, rgba(255,255,255,0.18) 0%, transparent 60%),
+                       radial-gradient(1px 1px at 45% 80%, rgba(255,255,255,0.2) 0%, transparent 60%),
+                       radial-gradient(1px 1px at 85% 20%, rgba(255,255,255,0.15) 0%, transparent 60%);
+    opacity: 0.5;
+}
+.hero-content { position: relative; z-index: 1; }
+.eyebrow {
     font-family: 'Inter', sans-serif;
-    color: #8b96bd !important;
-    font-size: 0.95rem;
-    margin-top: 0.6rem;
-    margin-bottom: 2.2rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: #b8a35f !important;
+    margin-bottom: 1.1rem;
+    animation: fadeIn 0.9s ease both;
+}
+.hero-headline {
+    font-family: 'Fraunces', serif !important;
+    font-weight: 500 !important;
+    font-size: clamp(2.1rem, 4vw, 3.4rem) !important;
+    line-height: 1.12 !important;
+    color: #ffffff !important;
+    max-width: 620px;
+    margin-bottom: 1.1rem !important;
+    animation: fadeUp 0.9s cubic-bezier(.22,1,.36,1) 0.1s both;
+}
+.hero-headline em { font-style: italic; color: #cdd7f2 !important; }
+.hero-sub {
+    font-family: 'Inter', sans-serif;
+    color: #93a0c6 !important;
+    font-size: 1.02rem;
+    max-width: 460px;
+    line-height: 1.6;
+    animation: fadeUp 0.9s cubic-bezier(.22,1,.36,1) 0.25s both;
+}
+.hero-scroll {
+    margin-top: 2.4rem;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #6c78a1 !important;
+    display: flex; align-items: center; gap: 10px;
+    animation: fadeIn 1.2s ease 0.5s both;
+}
+.hero-scroll::after {
+    content: "";
+    width: 28px; height: 1px;
+    background: linear-gradient(90deg, #6c78a1, transparent);
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ---------------- SECTION HEADERS ---------------- */
+h3 {
+    font-family: 'Fraunces', serif !important;
+    font-weight: 500 !important;
+    font-style: normal;
+    font-size: 1.5rem !important;
+    color: #f2f4fc !important;
+    margin-top: 3rem !important;
+    margin-bottom: 0.4rem !important;
     letter-spacing: 0.01em;
 }
-
-h3 {
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-weight: 600 !important;
+h3::before {
+    content: attr(data-step);
+    display: block;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.68rem;
+    letter-spacing: 0.28em;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 1.15rem !important;
-    color: #cdd7f2 !important;
-    margin-top: 2.2rem !important;
-    margin-bottom: 0.9rem !important;
+    color: #6c78a1;
+    margin-bottom: 0.5rem;
 }
+.section-wrap { animation: fadeUp 0.7s cubic-bezier(.22,1,.36,1) both; }
+.section-wrap.s1 { animation-delay: 0.05s; }
+.section-wrap.s2 { animation-delay: 0.12s; }
+.section-wrap.s3 { animation-delay: 0.19s; }
 
-/* Buttons: solid navy, subtle silver edge, no neon glow */
-.stButton > button {
-    background: linear-gradient(180deg, #1c2c63 0%, #101a3f 100%) !important;
+.section-rule { height: 1px; background: rgba(180,195,230,0.1); margin-top: 2.6rem; }
+
+/* ---------------- BUTTONS: thin, editorial, sweep-fill on hover ---------------- */
+.stButton > button, .stDownloadButton > button {
+    position: relative;
+    background: transparent !important;
     color: #f2f4fc !important;
-    border: 1px solid rgba(180, 195, 230, 0.35) !important;
-    border-radius: 4px !important;
-    padding: 0.7rem 2rem !important;
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.08em;
+    border: 1px solid rgba(200, 210, 240, 0.45) !important;
+    border-radius: 2px !important;
+    padding: 0.75rem 2rem !important;
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    font-size: 0.95rem;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.35) !important;
-    transition: all 0.25s ease !important;
+    font-size: 0.82rem;
+    overflow: hidden;
+    z-index: 0;
+    transition: color 0.4s ease, border-color 0.4s ease !important;
     width: 100%;
 }
-.stButton > button:hover {
-    border-color: rgba(230, 236, 255, 0.7) !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 10px 26px rgba(0,0,0,0.45) !important;
+.stButton > button::before, .stDownloadButton > button::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, #b8a35f, #8f7a3f);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.45s cubic-bezier(.22,1,.36,1);
+    z-index: -1;
 }
-
-.stDownloadButton > button {
-    background: linear-gradient(180deg, #2a3f8f 0%, #16215a 100%) !important;
-    color: #ffffff !important;
-    border: 1px solid rgba(200, 210, 240, 0.4) !important;
-    border-radius: 4px !important;
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 0.7rem 2rem !important;
-    width: 100%;
+.stButton > button:hover, .stDownloadButton > button:hover {
+    color: #0a0e1f !important;
+    border-color: #b8a35f !important;
 }
-.stDownloadButton > button:hover {
-    box-shadow: 0 10px 26px rgba(30,60,150,0.4) !important;
+.stButton > button:hover::before, .stDownloadButton > button:hover::before {
+    transform: scaleX(1);
 }
 
 /* File uploader */
 [data-testid="stFileUploadDropzone"] {
-    background-color: rgba(255, 255, 255, 0.025) !important;
-    border: 1px dashed rgba(180, 195, 230, 0.3) !important;
-    border-radius: 6px !important;
-    transition: all 0.25s ease !important;
+    background-color: rgba(255, 255, 255, 0.02) !important;
+    border: 1px solid rgba(180, 195, 230, 0.16) !important;
+    border-radius: 4px !important;
+    transition: border-color 0.3s ease, background 0.3s ease !important;
 }
 [data-testid="stFileUploadDropzone"]:hover {
-    background-color: rgba(180, 195, 230, 0.06) !important;
-    border-color: rgba(200, 210, 240, 0.55) !important;
+    background-color: rgba(184, 163, 95, 0.05) !important;
+    border-color: rgba(184, 163, 95, 0.45) !important;
 }
 
 /* Sidebar */
 [data-testid="stSidebar"] {
-    background-color: rgba(4, 8, 22, 0.92) !important;
-    border-right: 1px solid rgba(180, 195, 230, 0.12);
+    background-color: rgba(4, 7, 18, 0.95) !important;
+    border-right: 1px solid rgba(180, 195, 230, 0.1);
 }
 [data-testid="stSidebar"] h3 {
-    color: #9fadd6 !important;
-    font-size: 0.95rem !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.75rem !important;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #6c78a1 !important;
+    margin-top: 1.4rem !important;
 }
+[data-testid="stSidebar"] h3::before { content: none; }
 
 /* Inputs */
 .stTextInput>div>div>input, .stTextArea>div>div>textarea {
-    background-color: rgba(255,255,255,0.04) !important;
+    background-color: rgba(255,255,255,0.03) !important;
     color: #f0f2fb !important;
-    border: 1px solid rgba(180, 195, 230, 0.25) !important;
-    border-radius: 4px !important;
+    border: 1px solid rgba(180, 195, 230, 0.2) !important;
+    border-radius: 3px !important;
 }
 .stTextInput>div>div>input:focus, .stTextArea>div>div>textarea:focus {
-    border: 1px solid rgba(200, 210, 240, 0.6) !important;
-    box-shadow: 0 0 0 2px rgba(180, 195, 230, 0.12) !important;
+    border: 1px solid rgba(184, 163, 95, 0.55) !important;
+    box-shadow: 0 0 0 2px rgba(184, 163, 95, 0.1) !important;
 }
 
-/* Progress bar: quiet steel-blue, not neon */
+/* Progress bar */
 div[data-testid="stProgress"] > div > div {
-    background: linear-gradient(90deg, #2a3f8f, #6478c9) !important;
+    background: linear-gradient(90deg, #445a9e, #b8a35f) !important;
 }
 
-/* Result lines during processing */
-.match-line { font-family: 'Inter', sans-serif; font-size: 0.92rem; padding: 2px 0; }
+.match-line { font-family: 'Inter', sans-serif; font-size: 0.9rem; padding: 3px 0; color: #a9b3d4 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -182,31 +257,44 @@ if mode == "Gemini Vision AI":
     else:
         api_key = st.sidebar.text_input("Gemini API Key", type="password")
 
-st.sidebar.markdown("---")
 st.sidebar.markdown("### Background")
 bg_video_file = st.sidebar.file_uploader(
     "Optional stadium video (.mp4)",
     type=["mp4"],
-    help="Loops quietly behind the page, dimmed for readability."
+    help="Replaces the abstract hero backdrop with your own looping clip."
 )
 if bg_video_file is not None:
-    import base64
     video_b64 = base64.b64encode(bg_video_file.read()).decode()
     st.markdown(f"""
-        <video autoplay loop muted playsinline
-            style="position: fixed; right: 0; bottom: 0; min-width: 100%; min-height: 100%;
-                   z-index: -100; object-fit: cover; filter: brightness(0.28) saturate(1.05);">
-          <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
-        </video>
+        <style>.hero-bleed .scene {{ display: none !important; }}</style>
+        <div style="position: fixed; inset: 0; z-index: -100; overflow: hidden;">
+            <video autoplay loop muted playsinline
+                style="position:absolute; top:50%; left:50%; min-width:100%; min-height:100%;
+                       transform: translate(-50%,-50%); object-fit: cover;
+                       filter: brightness(0.28) saturate(1.05);">
+              <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
+            </video>
+        </div>
         <div style="position: fixed; inset: 0; z-index: -99; pointer-events: none;
-                    background: radial-gradient(circle at 50% 0%, rgba(16,32,79,0.35) 0%, rgba(3,5,15,0.75) 70%);">
+                    background: radial-gradient(circle at 50% 0%, rgba(16,32,79,0.3) 0%, rgba(3,5,15,0.8) 70%);">
         </div>
     """, unsafe_allow_html=True)
 
 
-# --- HEADER ---
-st.title("⭐ Squad Image Studio")
-st.markdown('<div class="subtitle">Match player photos to shirt numbers and rename an entire squad in one pass.</div>', unsafe_allow_html=True)
+# --- HERO ---
+st.markdown("""
+    <div class="hero-bleed">
+        <div class="scene scene-a"></div>
+        <div class="scene scene-b"></div>
+        <div class="grain"></div>
+        <div class="hero-content">
+            <div class="eyebrow">Matchday Preparation</div>
+            <div class="hero-headline">Every face,<br><em>every number,</em><br>in seconds.</div>
+            <div class="hero-sub">Upload a squad list and player photos — get every image renamed to its shirt number automatically.</div>
+            <div class="hero-scroll">Begin below</div>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
 
 
 # --- HELPER: NORMALIZE COLUMNS ---
@@ -272,7 +360,8 @@ def parse_pasted_text(text, default_team="AEK Athens"):
 
 
 # --- STEP 1: SQUAD LIST ---
-st.markdown("### 1. Squad List")
+st.markdown('<div class="section-wrap s1">', unsafe_allow_html=True)
+st.markdown('<h3 data-step="Step One">Squad List</h3>', unsafe_allow_html=True)
 db_input_method = st.radio("Source", ["Upload file", "Paste text"], horizontal=True, label_visibility="collapsed")
 
 df_db = None
@@ -302,10 +391,13 @@ else:
 
 if df_db is not None and not df_db.empty:
     st.dataframe(df_db.head(5), use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
+st.markdown('<div class="section-rule"></div>', unsafe_allow_html=True)
 
 # --- STEP 2: IMAGES ---
-st.markdown("### 2. Player Photos")
+st.markdown('<div class="section-wrap s2">', unsafe_allow_html=True)
+st.markdown('<h3 data-step="Step Two">Player Photos</h3>', unsafe_allow_html=True)
 st.caption("To keep nested subfolders, upload a .zip archive instead of loose files.")
 
 uploaded_files = st.file_uploader(
@@ -333,6 +425,9 @@ if uploaded_files:
 
     if images_to_process:
         st.caption(f"{len(images_to_process)} images ready.")
+st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('<div class="section-rule"></div>', unsafe_allow_html=True)
 
 
 # --- GEMINI VISION ---
@@ -351,7 +446,8 @@ def identify_with_gemini(image_bytes, key):
 
 
 # --- STEP 3: RENAME ---
-st.markdown("### 3. Rename & Download")
+st.markdown('<div class="section-wrap s3">', unsafe_allow_html=True)
+st.markdown('<h3 data-step="Step Three">Rename &amp; Download</h3>', unsafe_allow_html=True)
 
 if st.button("Rename photos"):
     if df_db is None or df_db.empty:
@@ -394,10 +490,10 @@ if st.button("Rename photos"):
                     new_filename = f"{number}{original_ext}"
                     out_path = os.path.join(folder_dir, new_filename) if folder_dir else new_filename
                     zip_out.writestr(out_path, img_bytes)
-                    st.markdown(f'<div class="match-line">✓ {img_path} → <b>{out_path}</b> ({player_matched["Player"]})</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="match-line">✓ {img_path} → <b style="color:#e7ecfb !important;">{out_path}</b> ({player_matched["Player"]})</div>', unsafe_allow_html=True)
                     processed_count += 1
                 else:
-                    st.markdown(f'<div class="match-line" style="color:#c98a8a !important;">— {img_path} → no match found</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="match-line" style="color:#8a6a6a !important;">— {img_path} → no match found</div>', unsafe_allow_html=True)
 
                 progress_bar.progress((idx + 1) / len(items))
 
@@ -409,3 +505,4 @@ if st.button("Rename photos"):
                 file_name="Renamed_Player_Images.zip",
                 mime="application/zip"
             )
+st.markdown('</div>', unsafe_allow_html=True)
