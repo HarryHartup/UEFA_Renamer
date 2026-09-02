@@ -55,12 +55,13 @@ def inject_css():
         background-attachment: fixed;
         position: relative;
         overflow-x: hidden;
+        isolation: isolate;
     }
 
     /* Drifting star / light-particle field (pure CSS, no assets) */
     .stApp::before{
         content:"";
-        position:fixed; inset:0;
+        position:absolute; inset:0;
         z-index:0;
         pointer-events:none;
         background-image:
@@ -84,7 +85,7 @@ def inject_css():
 
     /* Glowing orbs floating slowly behind content */
     .orb{
-        position:fixed; border-radius:50%;
+        position:absolute; border-radius:50%;
         filter: blur(70px);
         z-index:0; pointer-events:none;
         opacity:0.35;
@@ -110,7 +111,8 @@ def inject_css():
 
     /* Background video layer (optional, user-supplied) */
     .bg-video-wrap{
-        position:fixed; inset:0; z-index:0; overflow:hidden;
+        position:absolute; inset:0; z-index:0; overflow:hidden;
+        pointer-events:none;
     }
     .bg-video-wrap video{
         position:absolute; top:50%; left:50%;
@@ -121,14 +123,18 @@ def inject_css():
         filter: brightness(0.35) saturate(1.15);
     }
     .bg-video-tint{
-        position:fixed; inset:0; z-index:0;
+        position:absolute; inset:0; z-index:0;
+        pointer-events:none;
         background: linear-gradient(180deg, rgba(4,5,15,0.55) 0%, rgba(4,5,15,0.85) 75%, var(--navy-0) 100%);
     }
 
     .block-container{
-        position:relative; z-index:2;
+        position:relative; z-index:10 !important;
         padding-top: 1.2rem;
         max-width: 900px;
+    }
+    section[data-testid="stSidebar"]{
+        position:relative; z-index:10 !important;
     }
 
     /* ---------- HERO ---------- */
