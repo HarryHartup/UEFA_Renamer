@@ -13,36 +13,73 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- EDITORIAL HIGH-CONTRAST DESIGN SYSTEM ---
+# --- INJECT HTML5 BACKGROUND VIDEO & HIGH-CONTRAST EDITORIAL STYLES ---
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800;900&display=swap');
 
 :root {
-    --bg-main: #030712;
-    --bg-surface: #0B132B;
-    --bg-card: #111C38;
-    --border-color: rgba(255, 255, 255, 0.14);
+    --bg-main: #020617;
+    --bg-card: rgba(11, 19, 43, 0.75);
+    --border-color: rgba(255, 255, 255, 0.18);
     --text-primary: #F8FAFC;
-    --text-muted: #94A3B8;
     --accent-cyan: #00F0FF;
     --accent-volt: #E2F163;
 }
 
-/* Base Body & Reset */
+/* Hide default Streamlit chrome */
+#MainMenu, footer, header { visibility: hidden; }
+
 .stApp {
     background-color: var(--bg-main) !important;
     font-family: 'Space Grotesk', sans-serif !important;
     color: var(--text-primary) !important;
 }
 
-#MainMenu, footer, header { visibility: hidden; }
+/* Background Video Container with Controlled Opacity */
+.video-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -2;
+    overflow: hidden;
+    pointer-events: none;
+}
 
-/* Structural Container */
+.video-background video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.45; /* Control video opacity here (0.0 to 1.0) */
+    filter: brightness(0.7) contrast(1.2);
+}
+
+/* Dark Tint Overlay to Ensure Text Readability */
+.video-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;
+    background: radial-gradient(circle at center, rgba(2, 6, 23, 0.4) 0%, rgba(2, 6, 23, 0.85) 100%);
+    pointer-events: none;
+}
+
+/* Glassmorphic Container */
 .block-container {
     max-width: 1050px !important;
-    padding-top: 2rem !important;
+    padding-top: 2.5rem !important;
     padding-bottom: 5rem !important;
+    background: var(--bg-card) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    margin-top: 2rem !important;
+    margin-bottom: 2rem !important;
     animation: pageReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
@@ -70,6 +107,7 @@ st.markdown("""
     color: #FFFFFF;
     margin: 0;
     line-height: 0.95;
+    text-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
 }
 
 .editorial-subtitle {
@@ -89,23 +127,21 @@ st.markdown("""
     letter-spacing: 0.2em;
     text-transform: uppercase;
     color: var(--accent-cyan);
-    background: rgba(0, 240, 255, 0.04);
+    background: rgba(0, 240, 255, 0.08);
     font-weight: 700;
 }
 
 /* Form Controls & Inputs */
 .stRadio > div {
-    background: var(--bg-surface) !important;
+    background: rgba(11, 19, 43, 0.8) !important;
     border: 1px solid var(--border-color) !important;
-    border-radius: 0px !important;
     padding: 0.5rem !important;
 }
 
 .stTextInput > div > div > input, .stTextArea > div > div > textarea {
-    background: var(--bg-surface) !important;
+    background: rgba(11, 19, 43, 0.8) !important;
     border: 1px solid var(--border-color) !important;
     color: var(--text-primary) !important;
-    border-radius: 0px !important;
     font-family: 'Space Grotesk', sans-serif !important;
     padding: 0.75rem !important;
 }
@@ -117,18 +153,17 @@ st.markdown("""
 
 /* High-Contrast Dropzone */
 [data-testid="stFileUploadDropzone"] {
-    background: var(--bg-surface) !important;
+    background: rgba(11, 19, 43, 0.8) !important;
     border: 1px dashed rgba(255, 255, 255, 0.25) !important;
-    border-radius: 0px !important;
     transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
 [data-testid="stFileUploadDropzone"]:hover {
     border-color: var(--accent-cyan) !important;
-    background: rgba(0, 240, 255, 0.03) !important;
+    background: rgba(0, 240, 255, 0.05) !important;
 }
 
-/* Sharp Action Button with Offset Shadow */
+/* Sharp Action Button */
 .stButton > button {
     background: var(--accent-cyan) !important;
     color: #000000 !important;
@@ -138,7 +173,6 @@ st.markdown("""
     letter-spacing: 0.1em !important;
     text-transform: uppercase !important;
     border: none !important;
-    border-radius: 0px !important;
     padding: 1rem 2rem !important;
     box-shadow: 4px 4px 0px #000000, 4px 4px 0px 2px var(--accent-volt) !important;
     transition: transform 0.15s ease, box-shadow 0.15s ease !important;
@@ -150,22 +184,23 @@ st.markdown("""
     box-shadow: 6px 6px 0px #000000, 6px 6px 0px 2px var(--accent-volt) !important;
 }
 
-.stButton > button:active {
-    transform: translate(1px, 1px) !important;
-    box-shadow: 2px 2px 0px #000000, 2px 2px 0px 2px var(--accent-volt) !important;
-}
-
 /* Sidebar Customization */
 [data-testid="stSidebar"] {
-    background-color: var(--bg-surface) !important;
+    background-color: rgba(11, 19, 43, 0.85) !important;
+    backdrop-filter: blur(15px) !important;
     border-right: 1px solid var(--border-color) !important;
-}
-
-[data-testid="stDataFrame"] {
-    border: 1px solid var(--border-color) !important;
 }
 </style>
 
+<!-- HTML5 Looping Background Video -->
+<div class="video-background">
+    <video autoplay loop muted playsinline>
+        <source src="https://cdn.pixabay.com/video/2020/05/25/40149-424930062_large.mp4" type="video/mp4">
+    </video>
+</div>
+<div class="video-overlay"></div>
+
+<!-- Editorial Header -->
 <div class="editorial-header">
     <div>
         <div class="editorial-title">UCL SQUAD RENAME</div>
@@ -175,7 +210,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR ENGINE CONTROL ---
+# --- SIDEBAR CONTROL ---
 st.sidebar.markdown("### ⚙️ SYSTEM SETTINGS")
 mode = st.sidebar.radio(
     "RECOGNITION ENGINE", 
