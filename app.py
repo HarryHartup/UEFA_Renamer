@@ -199,12 +199,17 @@ with st.sidebar:
 
 # --- STRING NORMALIZATION ENGINE ---
 def clean_text(text):
+    """
+    Strips accents, converts to lowercase, and keeps ONLY letters and numbers.
+    Removes all spaces, underscores, and special symbols for bulletproof matching.
+    Example: 'Jens Petter_Hauge_ Headshots...' -> 'jenspetterhaugeheadshots'
+    """
     if not text:
         return ""
     text = unicodedata.normalize('NFD', str(text))
     text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
-    text = text.replace('_', ' ').replace('-', ' ')
-    return ' '.join(text.split()).lower()
+    # Keep only alphanumeric characters
+    return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
 
 def normalize_df(df):
     col_map = {}
@@ -221,7 +226,7 @@ def normalize_df(df):
         df['Team'] = 'Unknown Club'
     return df
 
-def parse_pasted_text(text, default_team="AEK Athens"):
+def parse_pasted_text(text, default_team="Bodø/Glimt"):
     lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
     if not lines:
         return None
@@ -230,7 +235,11 @@ def parse_pasted_text(text, default_team="AEK Athens"):
     for line in lines:
         parts = [p.strip() for p in line.split('|') if p.strip()]
         if len(parts) >= 3:
-            rows.append({'Player': parts[0], 'Team': parts[1], 'Number': parts[2]})
+            # Player is always first, Number is always last, middle is Team
+            player_name = parts[0]
+            squad_num = parts[-1]
+            team_name = parts[1] if len(parts) == 3 else " ".join(parts[1:-1])
+            rows.append({'Player': player_name, 'Team': team_name, 'Number': squad_num})
         elif len(parts) == 2:
             rows.append({'Player': parts[0], 'Team': default_team, 'Number': parts[1]})
         else:
@@ -248,7 +257,7 @@ def parse_pasted_text(text, default_team="AEK Athens"):
 
 # --- SECTION 1: SQUAD DATA ---
 st.markdown("##### [01] ROSTER DATABASE SOURCE")
-db_input_method = st.radio("Input Mode", ["Upload File (Excel/CSV/JSON)", "Paste Roster Text"], horizontal=True)
+db_input_method = st.radio("Input Mode", ["Paste Roster Text", "Upload File (Excel/CSV/JSON)"], horizontal=True)
 
 df_db = None
 
@@ -267,11 +276,11 @@ if db_input_method == "Upload File (Excel/CSV/JSON)":
         except Exception as e:
             st.error(f"Error parsing database file: {e}")
 else:
-    default_team_input = st.text_input("Fallback Club Name", value="AEK Athens")
+    default_team_input = st.text_input("Fallback Club Name", value="Bodø/Glimt")
     pasted_text = st.text_area(
         "Paste Roster Content",
-        height=160,
-        placeholder="Thomas Strakosha | AEK Athens | 1\nKasper Schmeichel | Celtic | 1"
+        height=180,
+        placeholder="Julian Faye Lund | Bodø/Glimt | 1\nVillads Nielsen | Bodø/Glimt | 2"
     )
     if pasted_text:
         df_db = parse_pasted_text(pasted_text, default_team=default_team_input)
@@ -279,11 +288,11 @@ else:
             st.success(f"✓ Parsed {len(df_db)} Athletes across {df_db['Team'].nunique()} Clubs!")
 
 if df_db is not None and not df_db.empty:
-    st.dataframe(df_db.head(5), use_container_width=True)
+    st.dataframe(df_db, use_container_width=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# --- SECTION 2: ASSETS, SUBFOLDERS & DIRECTORY PATHS ---
+# --- SECTION 2: ASSETS & FOLDERS ---
 st.markdown("##### [02] MEDIA ASSETS & FOLDERS")
 asset_input_method = st.radio("Asset Source", ["Drag & Drop Files / .ZIP Archive", "Local Folder Directory Path"], horizontal=True)
 
@@ -291,8 +300,8 @@ images_to_process = {}
 
 if asset_input_method == "Drag & Drop Files / .ZIP Archive":
     uploaded_files = st.file_uploader(
-        "Drop Individual Images OR a .ZIP Folder",
-        type=["png", "jpg", "jpeg", "webp", "zip"],
+        "Drop Individual Images OR a .ZIP Archive",
+        type=["zip", "png", "jpg", "jpeg", "webp"],
         accept_multiple_files=True
     )
 
@@ -366,33 +375,27 @@ if st.button("EXECUTE SCAN ENGINE"):
         items = list(images_to_process.items())
         total_items = len(items)
 
+        # ==========================================
         # MODE 1 & 2: LOCAL FILENAME MATCHING PASS
+        # ==========================================
         if "AI Vision Only" not in scan_mode:
             st.markdown("#### ⚡ PASS 1: FAST LOCAL FILENAME MATCHING")
             p1_bar = st.progress(0)
 
             for idx, (img_path, img_bytes) in enumerate(items):
                 filename = os.path.basename(img_path)
-                folder_dir = os.path.dirname(img_path)
                 cleaned_filename = clean_text(filename)
-                cleaned_folder = clean_text(folder_dir)
                 player_matched = None
                 matched_row_idx = None
 
                 for db_idx, row in df_db.iterrows():
                     clean_db_player = clean_text(row['Player'])
-                    clean_db_team = clean_text(row['Team'])
-                    player_parts = clean_db_player.split()
-                    last_name = player_parts[-1] if player_parts else clean_db_player
-
-                    if clean_db_player in cleaned_filename or (len(last_name) > 3 and last_name in cleaned_filename):
-                        if cleaned_folder and clean_db_team and clean_db_team in cleaned_folder:
-                            player_matched = row
-                            matched_row_idx = db_idx
-                            break
-                        elif not player_matched:
-                            player_matched = row
-                            matched_row_idx = db_idx
+                    
+                    # Strict alphanumeric substring matching
+                    if clean_db_player in cleaned_filename:
+                        player_matched = row
+                        matched_row_idx = db_idx
+                        break
 
                 if player_matched is not None:
                     final_matched[img_path] = (player_matched, img_bytes)
@@ -407,7 +410,9 @@ if st.button("EXECUTE SCAN ENGINE"):
         else:
             ai_queue = dict(items)
 
+        # ==========================================
         # MODE 1 & 3: GEMINI AI VISION PASS
+        # ==========================================
         if ai_queue and "Only (No AI)" not in scan_mode:
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown(f"#### 🧠 GEMINI AI VISION SCAN ({len(ai_queue)} Images)")
@@ -446,7 +451,9 @@ if st.button("EXECUTE SCAN ENGINE"):
             for img_path in ai_queue.keys():
                 unmatched_images.append(img_path)
 
+        # ==========================================
         # WRITE OUTPUT ZIP & RENDER CONSOLES
+        # ==========================================
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_out:
             for img_path, (player_row, img_bytes) in final_matched.items():
                 folder_dir = os.path.dirname(img_path)
