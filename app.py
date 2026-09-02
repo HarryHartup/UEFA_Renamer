@@ -3,21 +3,21 @@ import pandas as pd
 import os
 import zipfile
 import io
-import base64
-from openai import OpenAI
+from PIL import Image
+import google.generativeai as genai
 
 st.set_page_config(page_title="UCL Image Renamer", layout="centered")
 st.title("⚽ UCL Player Image Auto-Renamer")
 
 # --- SIDEBAR: API KEY & OPTIONS ---
 st.sidebar.header("Settings")
-mode = st.sidebar.radio("Recognition Mode", ["Vision AI (Recognize Face/Jersey)", "Filename Matching (No API Key)"])
+mode = st.sidebar.radio("Recognition Mode", ["Gemini Vision AI (Recognize Face/Jersey)", "Filename Matching (No API Key)"])
 
 api_key = ""
-if mode == "Vision AI (Recognize Face/Jersey)":
-    api_key = st.sidebar.text_input("OpenAI API Key", type="password", help="Get one at platform.openai.com")
+if mode == "Gemini Vision AI (Recognize Face/Jersey)":
+    api_key = st.sidebar.text_input("Gemini API Key", type="password", help="Get a free key at aistudio.google.com")
     if not api_key:
-        st.sidebar.warning("⚠️ Enter an OpenAI API key to use Vision AI recognition.")
+        st.sidebar.warning("⚠️ Enter a Google Gemini API key to use Vision AI.")
 
 # --- STEP 1: UPLOAD DATABASE ---
 st.subheader("1. Upload Squad Database")
@@ -37,33 +37,37 @@ if db_file:
 st.subheader("2. Upload Player Images")
 uploaded_images = st.file_uploader("Drag & drop player images", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
-# --- HELPER FUNCTIONS ---
-def identify_with_ai(image_bytes, key):
-    client = OpenAI(api_key=key)
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "Identify the soccer player in this image. Return ONLY their full name and club team in this format: Player Name, Team Name. Example: Luka Jović, AEK Athens"},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-            ]
-        }],
-        max_tokens=50
+# --- HELPER FUNCTION: GEMINI AI ---
+def identify_with_gemini(image_bytes, key):
+    # Configure API
+    genai.configure(api_key=key)
+    # Use the fast, multimodal flash model
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    # Load image bytes into a PIL Image for Gemini
+    img = Image.open(io.BytesIO(image_bytes))
+    
+    prompt = (
+        "Identify the soccer player in this image. "
+        "Return ONLY their full name and club team in this exact format: "
+        "Player Name, Team Name. Example: Luka Jović, AEK Athens"
     )
-    text = response.choices[0].message.content.strip()
+    
+    response = model.generate_content([prompt, img])
+    text = response.text.strip()
+    
+    # Extract just the player name
     parts = text.split(",")
     return parts[0].strip() if len(parts) > 0 else text
 
 # --- STEP 3: PROCESS & RENAME ---
 if st.button("Process & Rename Images"):
-    if not df_db is not None:
+    if df_db is None:
         st.error("Please upload a database first.")
     elif not uploaded_images:
         st.error("Please upload at least one image.")
-    elif mode == "Vision AI (Recognize Face/Jersey)" and not api_key:
-        st.error("OpenAI API key is required for Vision AI mode.")
+    elif mode == "Gemini Vision AI (Recognize Face/Jersey)" and not api_key:
+        st.error("Gemini API key is required for Vision AI mode.")
     else:
         zip_buffer = io.BytesIO()
         processed_count = 0
@@ -71,39 +75,38 @@ if st.button("Process & Rename Images"):
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
             progress_bar = st.progress(0)
             
-            for idx, img in enumerate(uploaded_images):
-                img_bytes = img.read()
-                original_ext = os.path.splitext(img.name)[1]
+            for idx, img_file in enumerate(uploaded_images):
+                img_bytes = img_file.read()
+                original_ext = os.path.splitext(img_file.name)[1]
                 player_matched = None
                 
-                # Mode A: Vision AI
-                if mode == "Vision AI (Recognize Face/Jersey)":
+                # Mode A: Gemini Vision AI
+                if mode == "Gemini Vision AI (Recognize Face/Jersey)":
                     try:
-                        detected_name = identify_with_ai(img_bytes, api_key)
+                        detected_name = identify_with_gemini(img_bytes, api_key)
                         matches = df_db[df_db['Player'].str.contains(detected_name, case=False, na=False)]
                         if not matches.empty:
                             player_matched = matches.iloc[0]
                     except Exception as e:
-                        st.warning(f"Failed AI detection for {img.name}: {e}")
+                        st.warning(f"Failed AI detection for {img_file.name}: {e}")
 
                 # Mode B: Filename Matching
                 else:
                     for _, row in df_db.iterrows():
-                        # Simple match: if player's last name or full name is in filename
                         clean_player = str(row['Player']).lower()
-                        if clean_player in img.name.lower():
+                        if clean_player in img_file.name.lower():
                             player_matched = row
                             break
 
-                # Save file into ZIP with 100% original quality intact
+                # Save file into ZIP with 100% original quality
                 if player_matched is not None:
                     number = str(player_matched['Number'])
                     new_filename = f"{number}{original_ext}"
                     zip_file.writestr(new_filename, img_bytes)
-                    st.write(f"✅ **{img.name}** → Renamed to `{new_filename}` ({player_matched['Player']})")
+                    st.write(f"✅ **{img_file.name}** → Renamed to `{new_filename}` ({player_matched['Player']})")
                     processed_count += 1
                 else:
-                    st.write(f"❌ **{img.name}** → No match found in database.")
+                    st.write(f"❌ **{img_file.name}** → No match found in database.")
 
                 progress_bar.progress((idx + 1) / len(uploaded_images))
 
