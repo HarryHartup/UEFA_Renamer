@@ -198,18 +198,20 @@ with st.sidebar:
                 st.warning("⚠️ Enter a Google Gemini API key.")
 
 # --- STRING NORMALIZATION ENGINE ---
-def clean_text(text):
-    """
-    Strips accents, converts to lowercase, and keeps ONLY letters and numbers.
-    Removes all spaces, underscores, and special symbols for bulletproof matching.
-    Example: 'Jens Petter_Hauge_ Headshots...' -> 'jenspetterhaugeheadshots'
-    """
-    if not text:
-        return ""
+def clean_strict(text):
+    """Strip accents and non-alphanumeric chars for direct comparison."""
+    if not text: return ""
     text = unicodedata.normalize('NFD', str(text))
     text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
-    # Keep only alphanumeric characters
     return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
+
+def clean_words(text):
+    """Strip accents, convert underscores/hyphens to spaces, return clean word list."""
+    if not text: return []
+    text = unicodedata.normalize('NFD', str(text))
+    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text)
+    return [w.lower() for w in text.split() if len(w) > 1]
 
 def normalize_df(df):
     col_map = {}
@@ -233,25 +235,27 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
 
     rows = []
     for line in lines:
-        parts = [p.strip() for p in line.split('|') if p.strip()]
+        # Split by tabs or pipes flexibly
+        parts = [p.strip() for p in re.split(r'[\t|]', line) if p.strip()]
+        
         if len(parts) >= 3:
-            # Player is always first, Number is always last, middle is Team
             player_name = parts[0]
             squad_num = parts[-1]
-            team_name = parts[1] if len(parts) == 3 else " ".join(parts[1:-1])
+            team_name = parts[1] if len(parts) == 3 else parts[1]
             rows.append({'Player': player_name, 'Team': team_name, 'Number': squad_num})
         elif len(parts) == 2:
-            rows.append({'Player': parts[0], 'Team': default_team, 'Number': parts[1]})
+            # Player + Number
+            m_num = re.search(r'\d+', parts[1])
+            if m_num:
+                rows.append({'Player': parts[0], 'Team': default_team, 'Number': m_num.group(0)})
         else:
-            m_start = re.match(r'^(\d+)\s+(.+)$', line)
+            # RegEx extract name and trailing number
             m_end = re.search(r'^(.*?)\s+(\d+)$', line)
-            if m_start:
-                rows.append({'Player': m_start.group(2).strip(), 'Team': default_team, 'Number': m_start.group(1).strip()})
-            elif m_end:
+            if m_end:
                 rows.append({'Player': m_end.group(1).strip(), 'Team': default_team, 'Number': m_end.group(2).strip()})
 
     df = pd.DataFrame(rows) if rows else None
-    if df is not None:
+    if df is not None and not df.empty:
         df = df[~df['Player'].str.lower().isin(['player', 'name', 'full name'])]
     return df
 
@@ -280,12 +284,12 @@ else:
     pasted_text = st.text_area(
         "Paste Roster Content",
         height=180,
-        placeholder="Julian Faye Lund | Bodø/Glimt | 1\nVillads Nielsen | Bodø/Glimt | 2"
+        placeholder="Julian Faye Lund\tBodø/Glimt | Bodø/Glimt | 1\nVillads Nielsen\tBodø/Glimt | Bodø/Glimt | 2"
     )
     if pasted_text:
         df_db = parse_pasted_text(pasted_text, default_team=default_team_input)
         if df_db is not None and not df_db.empty:
-            st.success(f"✓ Parsed {len(df_db)} Athletes across {df_db['Team'].nunique()} Clubs!")
+            st.success(f"✓ Parsed {len(df_db)} Athletes successfully!")
 
 if df_db is not None and not df_db.empty:
     st.dataframe(df_db, use_container_width=True)
@@ -321,7 +325,7 @@ if asset_input_method == "Drag & Drop Files / .ZIP Archive":
                 images_to_process[f.name] = f.read()
 
 else:
-    folder_path = st.text_input("Paste Local Folder Path (e.g. C:/Users/Name/Pictures/SquadFolder)", placeholder="e.g. /Users/yourusername/Downloads/UCL_Images")
+    folder_path = st.text_input("Paste Local Folder Path", placeholder="e.g. C:/Users/Hawk-Eye/Pictures/RAW Images")
     if folder_path and os.path.exists(folder_path):
         for root, _, files in os.walk(folder_path):
             for file in files:
@@ -384,15 +388,25 @@ if st.button("EXECUTE SCAN ENGINE"):
 
             for idx, (img_path, img_bytes) in enumerate(items):
                 filename = os.path.basename(img_path)
-                cleaned_filename = clean_text(filename)
+                strict_filename = clean_strict(filename)
+                file_words = set(clean_words(filename))
+                
                 player_matched = None
                 matched_row_idx = None
 
                 for db_idx, row in df_db.iterrows():
-                    clean_db_player = clean_text(row['Player'])
-                    
-                    # Strict alphanumeric substring matching
-                    if clean_db_player in cleaned_filename:
+                    player_name_raw = str(row['Player'])
+                    strict_player = clean_strict(player_name_raw)
+                    player_words = set(clean_words(player_name_raw))
+
+                    # Criterion 1: Direct strict substring match (e.g., 'jenspetterhauge' inside 'jenspetterhaugeheadshots...')
+                    if strict_player and strict_player in strict_filename:
+                        player_matched = row
+                        matched_row_idx = db_idx
+                        break
+
+                    # Criterion 2: All core words in player's name appear in the filename
+                    if player_words and player_words.issubset(file_words):
                         player_matched = row
                         matched_row_idx = db_idx
                         break
@@ -426,11 +440,11 @@ if st.button("EXECUTE SCAN ENGINE"):
 
                 try:
                     detected_name = identify_with_gemini(img_bytes, api_key)
-                    cleaned_detected = clean_text(detected_name)
+                    strict_detected = clean_strict(detected_name)
 
                     for db_idx, row in df_db.iterrows():
-                        clean_db_player = clean_text(row['Player'])
-                        if clean_db_player in cleaned_detected or cleaned_detected in clean_db_player:
+                        strict_player = clean_strict(row['Player'])
+                        if strict_player in strict_detected or strict_detected in strict_player:
                             player_matched = row
                             matched_row_idx = db_idx
                             break
