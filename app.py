@@ -6,7 +6,6 @@ from PIL import Image
 import google.generativeai as genai
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="UCL SQUAD RENAME ENGINE",
@@ -14,97 +13,64 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- IMMEDIATE GLOBAL BACKGROUND LOCK (Prevents Grey Flash) ---
-st.markdown("""
-<style>
-/* Lock root, HTML, body, and app viewport to solid deep dark immediately */
-html, body, [data-testid="stAppViewContainer"], .stApp {
-    background-color: #020617 !important;
-    background: #020617 !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# --- FULLSCREEN AUTOPLAY VIDEO COMPONENT ---
-components.html(
-    """
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body, html { width: 100%; height: 100%; overflow: hidden; background: #020617; }
-      
-      #bg-video {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        min-width: 100%;
-        min-height: 100%;
-        width: auto;
-        height: auto;
-        z-index: 1;
-        transform: translate(-50%, -50%);
-        object-fit: cover;
-        opacity: 0.50;
-        filter: brightness(0.65) contrast(1.2) hue-rotate(190deg);
-      }
-      
-      .overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        z-index: 2;
-        background: radial-gradient(circle at center, rgba(2, 6, 23, 0.2) 0%, rgba(2, 6, 23, 0.85) 100%);
-      }
-    </style>
-    
-    <video id="bg-video" autoplay loop muted playsinline preload="auto">
-      <source src="https://commondatastreaming.gvt1.com/videoplayback?id=c8065a9539304917&itag=18&source=youtube" type="video/mp4">
-      <source src="https://assets.mixkit.co/videos/preview/mixkit-football-stadium-lights-and-field-41551-large.mp4" type="video/mp4">
-    </video>
-    <div class="overlay"></div>
-    """,
-    height=0,
-)
-
-# --- EDITORIAL STYLING OVERRIDES ---
+# --- UEFA CHAMPIONS LEAGUE PURE CSS ANIMATED MESH BACKDROP ---
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800;900&display=swap');
 
 :root {
-    --bg-card: rgba(8, 15, 35, 0.82);
-    --border-color: rgba(0, 240, 255, 0.3);
+    --bg-main: #020617;
+    --bg-card: rgba(8, 15, 35, 0.85);
+    --border-color: rgba(0, 240, 255, 0.35);
     --text-primary: #F8FAFC;
     --accent-cyan: #00F0FF;
     --accent-volt: #E2F163;
 }
 
-/* Hide Streamlit default chrome */
+/* Hide Streamlit default UI chrome */
 #MainMenu, footer, header { visibility: hidden; }
 
-/* Set iframe component to fixed background position */
-iframe[title="streamlit.components.v1.html"] {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    z-index: -1 !important;
-    border: none !important;
-    pointer-events: none !important;
+/* Global Background Lock (Prevents Grey Flash) */
+html, body, [data-testid="stAppViewContainer"], .stApp {
+    background-color: var(--bg-main) !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    color: var(--text-primary) !important;
 }
 
-/* Glassmorphic Container */
+/* Animated Dynamic Gradient Mesh Backdrop */
+.stApp::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;
+    background: 
+        radial-gradient(circle at 15% 20%, rgba(0, 240, 255, 0.18) 0%, transparent 45%),
+        radial-gradient(circle at 85% 80%, rgba(0, 20, 137, 0.45) 0%, transparent 50%),
+        radial-gradient(circle at 50% 50%, rgba(226, 241, 99, 0.08) 0%, transparent 60%),
+        radial-gradient(circle at 80% 10%, rgba(0, 102, 255, 0.25) 0%, transparent 40%);
+    background-size: 180% 180%;
+    animation: uclMeshMove 14s ease-in-out infinite alternate;
+}
+
+@keyframes uclMeshMove {
+    0% { background-position: 0% 0%; }
+    50% { background-position: 100% 100%; }
+    100% { background-position: 0% 100%; }
+}
+
+/* Glassmorphic Main Card Container */
 .block-container {
     max-width: 1050px !important;
     padding-top: 2.5rem !important;
     padding-bottom: 5rem !important;
     background: var(--bg-card) !important;
-    backdrop-filter: blur(20px) !important;
-    -webkit-backdrop-filter: blur(20px) !important;
+    backdrop-filter: blur(25px) !important;
+    -webkit-backdrop-filter: blur(25px) !important;
     border: 1px solid var(--border-color);
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85);
     margin-top: 2rem !important;
     margin-bottom: 2rem !important;
 }
@@ -128,7 +94,7 @@ iframe[title="streamlit.components.v1.html"] {
     color: #FFFFFF;
     margin: 0;
     line-height: 0.95;
-    text-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
+    text-shadow: 0 0 25px rgba(0, 240, 255, 0.5);
 }
 
 .editorial-subtitle {
@@ -152,7 +118,7 @@ iframe[title="streamlit.components.v1.html"] {
     font-weight: 700;
 }
 
-/* Form Controls & Dropzone */
+/* Form Inputs & Dropzone */
 .stRadio > div {
     background: rgba(11, 19, 43, 0.9) !important;
     border: 1px solid var(--border-color) !important;
