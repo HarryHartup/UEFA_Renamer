@@ -13,21 +13,21 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- INJECT HTML5 BACKGROUND VIDEO & HIGH-CONTRAST EDITORIAL STYLES ---
+# --- INJECT BACKGROUND VIDEO & STYLES ---
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800;900&display=swap');
 
 :root {
     --bg-main: #020617;
-    --bg-card: rgba(11, 19, 43, 0.75);
-    --border-color: rgba(255, 255, 255, 0.18);
+    --bg-card: rgba(8, 15, 35, 0.78);
+    --border-color: rgba(0, 240, 255, 0.25);
     --text-primary: #F8FAFC;
     --accent-cyan: #00F0FF;
     --accent-volt: #E2F163;
 }
 
-/* Hide default Streamlit chrome */
+/* Hide Streamlit default UI elements */
 #MainMenu, footer, header { visibility: hidden; }
 
 .stApp {
@@ -36,27 +36,22 @@ st.markdown("""
     color: var(--text-primary) !important;
 }
 
-/* Background Video Container with Controlled Opacity */
-.video-background {
+/* Fixed Video Background Layer */
+#bg-video {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    right: 0;
+    bottom: 0;
+    min-width: 100%;
+    min-height: 100%;
+    width: auto;
+    height: auto;
     z-index: -2;
-    overflow: hidden;
-    pointer-events: none;
-}
-
-.video-background video {
-    width: 100%;
-    height: 100%;
     object-fit: cover;
-    opacity: 0.45; /* Control video opacity here (0.0 to 1.0) */
-    filter: brightness(0.7) contrast(1.2);
+    opacity: 0.50; /* Adjust video opacity (0.0 to 1.0) */
+    filter: brightness(0.65) contrast(1.2) hue-rotate(190deg);
 }
 
-/* Dark Tint Overlay to Ensure Text Readability */
+/* Dark Radial Gradient Overlay for High Contrast Text */
 .video-overlay {
     position: fixed;
     top: 0;
@@ -64,11 +59,11 @@ st.markdown("""
     width: 100vw;
     height: 100vh;
     z-index: -1;
-    background: radial-gradient(circle at center, rgba(2, 6, 23, 0.4) 0%, rgba(2, 6, 23, 0.85) 100%);
+    background: radial-gradient(circle at center, rgba(2, 6, 23, 0.3) 0%, rgba(2, 6, 23, 0.85) 100%);
     pointer-events: none;
 }
 
-/* Glassmorphic Container */
+/* Glassmorphic Main Layout Container */
 .block-container {
     max-width: 1050px !important;
     padding-top: 2.5rem !important;
@@ -77,18 +72,12 @@ st.markdown("""
     backdrop-filter: blur(20px) !important;
     -webkit-backdrop-filter: blur(20px) !important;
     border: 1px solid var(--border-color);
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
     margin-top: 2rem !important;
     margin-bottom: 2rem !important;
-    animation: pageReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-@keyframes pageReveal {
-    from { opacity: 0; transform: translateY(16px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* Editorial Header Block */
+/* Editorial Header Typography */
 .editorial-header {
     border-bottom: 2px solid var(--accent-cyan);
     padding-bottom: 1.5rem;
@@ -131,15 +120,15 @@ st.markdown("""
     font-weight: 700;
 }
 
-/* Form Controls & Inputs */
+/* Input Fields & Textareas */
 .stRadio > div {
-    background: rgba(11, 19, 43, 0.8) !important;
+    background: rgba(11, 19, 43, 0.85) !important;
     border: 1px solid var(--border-color) !important;
     padding: 0.5rem !important;
 }
 
 .stTextInput > div > div > input, .stTextArea > div > div > textarea {
-    background: rgba(11, 19, 43, 0.8) !important;
+    background: rgba(11, 19, 43, 0.85) !important;
     border: 1px solid var(--border-color) !important;
     color: var(--text-primary) !important;
     font-family: 'Space Grotesk', sans-serif !important;
@@ -151,19 +140,13 @@ st.markdown("""
     box-shadow: 4px 4px 0px var(--accent-cyan) !important;
 }
 
-/* High-Contrast Dropzone */
+/* Dropzone Styling */
 [data-testid="stFileUploadDropzone"] {
-    background: rgba(11, 19, 43, 0.8) !important;
-    border: 1px dashed rgba(255, 255, 255, 0.25) !important;
-    transition: border-color 0.2s ease, background-color 0.2s ease;
+    background: rgba(11, 19, 43, 0.85) !important;
+    border: 1px dashed rgba(0, 240, 255, 0.4) !important;
 }
 
-[data-testid="stFileUploadDropzone"]:hover {
-    border-color: var(--accent-cyan) !important;
-    background: rgba(0, 240, 255, 0.05) !important;
-}
-
-/* Sharp Action Button */
+/* Action Button */
 .stButton > button {
     background: var(--accent-cyan) !important;
     color: #000000 !important;
@@ -186,21 +169,19 @@ st.markdown("""
 
 /* Sidebar Customization */
 [data-testid="stSidebar"] {
-    background-color: rgba(11, 19, 43, 0.85) !important;
+    background-color: rgba(8, 15, 35, 0.9) !important;
     backdrop-filter: blur(15px) !important;
     border-right: 1px solid var(--border-color) !important;
 }
 </style>
 
-<!-- HTML5 Looping Background Video -->
-<div class="video-background">
-    <video autoplay loop muted playsinline>
-        <source src="https://cdn.pixabay.com/video/2020/05/25/40149-424930062_large.mp4" type="video/mp4">
-    </video>
-</div>
+<!-- BACKGROUND VIDEO ELEMENT -->
+<video id="bg-video" autoplay loop muted playsinline>
+    <source src="https://assets.mixkit.co/videos/preview/mixkit-football-stadium-lights-and-field-41551-large.mp4" type="video/mp4">
+</video>
 <div class="video-overlay"></div>
 
-<!-- Editorial Header -->
+<!-- EDITORIAL HEADER -->
 <div class="editorial-header">
     <div>
         <div class="editorial-title">UCL SQUAD RENAME</div>
