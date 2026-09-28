@@ -252,23 +252,48 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
     return df
 
 # --- DYNAMIC UI UPDATING UEFA LEAGUE PHASE API SCRAPER ---
+# 100% matched to your provided 36 League Phase Teams
 UEFA_LEAGUE_PHASE_TEAMS = {
-    50124: "AEK Athens", 50137: "Bodø/Glimt", 50051: "Real Madrid",
-    50065: "Manchester City", 50030: "Bayern Munich", 50043: "Paris Saint-Germain",
-    50050: "Liverpool", 50064: "Inter Milan", 50009: "Borussia Dortmund",
-    50158: "RB Leipzig", 50080: "FC Barcelona", 50109: "Bayer Leverkusen",
-    50125: "Atlético Madrid", 50108: "Atalanta", 50058: "Juventus",
-    50017: "S.L. Benfica", 50029: "Arsenal", 50008: "Club Brugge",
-    50120: "Shakhtar Donetsk", 50042: "AC Milan", 50012: "Feyenoord",
-    50149: "Sporting CP", 50062: "PSV Eindhoven", 50138: "GNK Dinamo Zagreb",
-    50146: "FC Red Bull Salzburg", 50082: "LOSC Lille", 50121: "FK Crvena zvezda",
-    50011: "BSC Young Boys", 50122: "ŠK Slovan Bratislava", 50123: "AS Monaco",
-    50147: "AC Sparta Praha", 50060: "Aston Villa", 50081: "Bologna",
-    50061: "Stade Brestois 29", 50139: "VfB Stuttgart", 50148: "LASK"
+    50124: "AEK Athens",
+    50029: "Arsenal",
+    50060: "Aston Villa",
+    50125: "Atleti",
+    50009: "B. Dortmund",
+    50080: "Barcelona",
+    50030: "Bayern München",
+    2601115: "Bodø/Glimt", 
+    50008: "Club Brugge",
+    2602288: "Como", 
+    52692: "Fenerbahçe",
+    50012: "Feyenoord",
+    50067: "Galatasaray",
+    50064: "Inter",
+    50148: "LASK",
+    50158: "Leipzig",
+    52277: "Lens",
+    50082: "Lille",
+    50050: "Liverpool",
+    50065: "Man City",
+    52682: "Man Utd",
+    50136: "Napoli",
+    50043: "Paris",
+    50041: "Porto",
+    50062: "PSV",
+    52265: "Real Betis",
+    50051: "Real Madrid",
+    50137: "Roma", 
+    50122: "S. Bratislava",
+    2600527: "Sabah",
+    50120: "Shakhtar",
+    52061: "Slavia Praha",
+    50149: "Sporting CP",
+    50139: "Stuttgart",
+    50143: "Viking",
+    70691: "Villarreal"
 }
 
 def fetch_uefa_league_phase_squads_live(status_container, table_container, log_container):
-    """Fetches squads with detailed error logging for timeouts and HTTP errors."""
+    """Fetches squads with skip-on-fail logic and real-time screen printing."""
     all_players = []
     error_logs = []
     
@@ -278,7 +303,8 @@ def fetch_uefa_league_phase_squads_live(status_container, table_container, log_c
     ]
 
     for idx, (team_id, team_name) in enumerate(UEFA_LEAGUE_PHASE_TEAMS.items()):
-        status_container.info(f"📡 Fetching Team {idx+1}/{len(UEFA_LEAGUE_PHASE_TEAMS)}: **{team_name}**")
+        # Update the UI instantly so you know which team it is looking at right now
+        status_container.info(f"📡 Fetching Team {idx+1}/{len(UEFA_LEAGUE_PHASE_TEAMS)}: **{team_name}**...")
         target_url = f"https://comp.uefa.com/v2/teams/{team_id}/squad"
         
         success = False
@@ -287,7 +313,8 @@ def fetch_uefa_league_phase_squads_live(status_container, table_container, log_c
         for proxy_name, proxy_url in proxies:
             if success: break
             try:
-                res = requests.get(f"{proxy_url}{target_url}", timeout=5)
+                # Timeout set low (4s) so if it fails, it skips fast and doesn't hold you up
+                res = requests.get(f"{proxy_url}{target_url}", timeout=4)
                 if res.status_code == 200:
                     data = res.json()
                     for p in data.get("players", []):
@@ -302,24 +329,23 @@ def fetch_uefa_league_phase_squads_live(status_container, table_container, log_c
                 else:
                     team_errors.append(f"[{proxy_name}] HTTP {res.status_code}")
             except requests.exceptions.Timeout:
-                team_errors.append(f"[{proxy_name}] Timeout (5s)")
-            except requests.exceptions.ConnectionError:
-                team_errors.append(f"[{proxy_name}] Connection Refused")
+                team_errors.append(f"[{proxy_name}] Timeout")
             except Exception as e:
-                team_errors.append(f"[{proxy_name}] {type(e).__name__}")
+                team_errors.append(f"[{proxy_name}] Error")
                 
         if not success:
-            error_logs.append(f"❌ {team_name} Failed | " + " | ".join(team_errors))
+            # If it fails, log it and gracefully SKIP to the next team
+            error_logs.append(f"❌ {team_name} | Skipped")
             
+        # Continually re-render whatever we have successfully scraped so far
         if all_players:
             temp_df = pd.DataFrame(all_players)
             table_container.dataframe(temp_df, use_container_width=True, height=250)
 
-    status_container.empty()
+    status_container.empty() # Clear the "Fetching..." banner when done
     
-    # Display the structured error logs if any teams failed completely
     if error_logs:
-        with log_container.expander("🛠️ Network Diagnostic Logs (Failed Teams)", expanded=True):
+        with log_container.expander(f"⚠️ {len(error_logs)} Teams Skipped (Network Blocked or Missing ID)", expanded=True):
             st.code("\n".join(error_logs), language="text")
             
     return pd.DataFrame(all_players) if all_players else None
@@ -348,11 +374,11 @@ if db_input_method == "Fetch Live League Phase Squads (UEFA.com)":
             missing_teams_count = len(UEFA_LEAGUE_PHASE_TEAMS) - df_fetched['Team'].nunique()
             
             if missing_teams_count > 0:
-                st.warning(f"⚠️ Warning: Completed with partial success. Loaded {len(df_fetched)} players across {df_fetched['Team'].nunique()} Clubs. {missing_teams_count} clubs timed out and were skipped (check Diagnostic Logs).")
+                st.success(f"✓ Partial Success: Loaded {len(df_fetched)} players across {df_fetched['Team'].nunique()} Clubs. Skipped {missing_teams_count} clubs automatically.")
             else:
                 st.success(f"✓ Total Victory: Loaded {len(df_fetched)} League Phase Players across all 36 Clubs!")
         else:
-            st.error("Could not fetch UEFA League Phase data. All proxy requests timed out (check Diagnostic Logs).")
+            st.error("Could not fetch UEFA League Phase data. All requests failed/timed out.")
 
     if 'df_db' in st.session_state:
         df_db = st.session_state['df_db']
@@ -561,7 +587,6 @@ if st.button("EXECUTE SCAN ENGINE"):
                             break
                             
                 except Exception as e:
-                    # Capture exact error types for debugging API rate limits/blocks
                     error_msg = f"HTTP/API Error: {type(e).__name__} - {str(e)}"
                     st.warning(f"⚠️ AI bypass on `{filename}`: {error_msg}")
                     unmatched_images.append(img_path)
