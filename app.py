@@ -3,7 +3,7 @@ import os
 import re
 import unicodedata
 import zipfile
-import requests
+from curl_cffi import requests as cffi_requests
 from PIL import Image
 import google.generativeai as genai
 import pandas as pd
@@ -251,7 +251,7 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
         df = df[~df['Player'].str.lower().isin(['player', 'name', 'full name'])]
     return df
 
-# --- DYNAMIC UI UPDATING UEFA LEAGUE PHASE API SCRAPER ---
+# --- CURL_CFFI UEFA LEAGUE PHASE API SCRAPER ---
 # 100% matched to your provided 36 League Phase Teams
 UEFA_LEAGUE_PHASE_TEAMS = {
     50124: "AEK Athens",
@@ -293,59 +293,47 @@ UEFA_LEAGUE_PHASE_TEAMS = {
 }
 
 def fetch_uefa_league_phase_squads_live(status_container, table_container, log_container):
-    """Fetches squads with skip-on-fail logic and real-time screen printing."""
+    """Fetches squads securely using curl_cffi to spoof TLS browser signatures."""
     all_players = []
     error_logs = []
-    
-    proxies = [
-        ("CorsProxy.io", "https://corsproxy.io/?url="),
-        ("AllOrigins", "https://api.allorigins.win/raw?url=")
-    ]
 
     for idx, (team_id, team_name) in enumerate(UEFA_LEAGUE_PHASE_TEAMS.items()):
-        # Update the UI instantly so you know which team it is looking at right now
-        status_container.info(f"📡 Fetching Team {idx+1}/{len(UEFA_LEAGUE_PHASE_TEAMS)}: **{team_name}**...")
+        status_container.info(f"📡 TLS Impersonation Fetching Team {idx+1}/{len(UEFA_LEAGUE_PHASE_TEAMS)}: **{team_name}**...")
+        
+        # Calling UEFA directly! No proxies.
         target_url = f"https://comp.uefa.com/v2/teams/{team_id}/squad"
-        
         success = False
-        team_errors = []
         
-        for proxy_name, proxy_url in proxies:
-            if success: break
-            try:
-                # Timeout set low (4s) so if it fails, it skips fast and doesn't hold you up
-                res = requests.get(f"{proxy_url}{target_url}", timeout=4)
-                if res.status_code == 200:
-                    data = res.json()
-                    for p in data.get("players", []):
-                        num = p.get("shirtNumber") or p.get("jerseyNumber")
-                        if num:
-                            all_players.append({
-                                "Player": p.get("internationalName") or p.get("name"),
-                                "Team": team_name,
-                                "Number": str(num)
-                            })
-                    success = True
-                else:
-                    team_errors.append(f"[{proxy_name}] HTTP {res.status_code}")
-            except requests.exceptions.Timeout:
-                team_errors.append(f"[{proxy_name}] Timeout")
-            except Exception as e:
-                team_errors.append(f"[{proxy_name}] Error")
+        try:
+            # Impersonate a standard Chrome browser exactly
+            res = cffi_requests.get(target_url, impersonate="chrome110", timeout=8)
+            
+            if res.status_code == 200:
+                data = res.json()
+                for p in data.get("players", []):
+                    num = p.get("shirtNumber") or p.get("jerseyNumber")
+                    if num:
+                        all_players.append({
+                            "Player": p.get("internationalName") or p.get("name"),
+                            "Team": team_name,
+                            "Number": str(num)
+                        })
+                success = True
+            else:
+                error_logs.append(f"❌ {team_name} | HTTP {res.status_code}")
                 
-        if not success:
-            # If it fails, log it and gracefully SKIP to the next team
-            error_logs.append(f"❌ {team_name} | Skipped")
+        except Exception as e:
+            error_logs.append(f"❌ {team_name} | {type(e).__name__} Timeout")
             
         # Continually re-render whatever we have successfully scraped so far
         if all_players:
             temp_df = pd.DataFrame(all_players)
             table_container.dataframe(temp_df, use_container_width=True, height=250)
 
-    status_container.empty() # Clear the "Fetching..." banner when done
+    status_container.empty()
     
     if error_logs:
-        with log_container.expander(f"⚠️ {len(error_logs)} Teams Skipped (Network Blocked or Missing ID)", expanded=True):
+        with log_container.expander(f"⚠️ {len(error_logs)} Teams Skipped (Check Logs)", expanded=True):
             st.code("\n".join(error_logs), language="text")
             
     return pd.DataFrame(all_players) if all_players else None
