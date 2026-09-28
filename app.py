@@ -3,6 +3,7 @@ import os
 import re
 import unicodedata
 import zipfile
+import requests
 from PIL import Image
 import google.generativeai as genai
 import pandas as pd
@@ -199,14 +200,12 @@ with st.sidebar:
 
 # --- STRING NORMALIZATION ENGINE ---
 def clean_strict(text):
-    """Strip accents and non-alphanumeric chars for direct comparison."""
     if not text: return ""
     text = unicodedata.normalize('NFD', str(text))
     text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
     return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
 
 def clean_words(text):
-    """Strip accents, convert underscores/hyphens to spaces, return clean word list."""
     if not text: return []
     text = unicodedata.normalize('NFD', str(text))
     text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
@@ -236,12 +235,8 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
     rows = []
     for line in lines:
         parts = [p.strip() for p in re.split(r'[\t|]', line) if p.strip()]
-        
         if len(parts) >= 3:
-            player_name = parts[0]
-            squad_num = parts[-1]
-            team_name = parts[1] if len(parts) == 3 else parts[1]
-            rows.append({'Player': player_name, 'Team': team_name, 'Number': squad_num})
+            rows.append({'Player': parts[0], 'Team': parts[1], 'Number': parts[-1]})
         elif len(parts) == 2:
             m_num = re.search(r'\d+', parts[1])
             if m_num:
@@ -256,13 +251,73 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
         df = df[~df['Player'].str.lower().isin(['player', 'name', 'full name'])]
     return df
 
+# --- DIRECT UEFA LEAGUE PHASE API SCRAPER ---
+UEFA_LEAGUE_PHASE_TEAMS = {
+    50124: "AEK Athens", 50137: "Bodø/Glimt", 50051: "Real Madrid",
+    50065: "Manchester City", 50030: "Bayern Munich", 50043: "Paris Saint-Germain",
+    50050: "Liverpool", 50064: "Inter Milan", 50009: "Borussia Dortmund",
+    50158: "RB Leipzig", 50080: "FC Barcelona", 50109: "Bayer Leverkusen",
+    50125: "Atlético Madrid", 50108: "Atalanta", 50058: "Juventus",
+    50017: "S.L. Benfica", 50029: "Arsenal", 50008: "Club Brugge",
+    50120: "Shakhtar Donetsk", 50042: "AC Milan", 50012: "Feyenoord",
+    50149: "Sporting CP", 50062: "PSV Eindhoven", 50138: "GNK Dinamo Zagreb",
+    50146: "FC Red Bull Salzburg", 50082: "LOSC Lille", 50121: "FK Crvena zvezda",
+    50011: "BSC Young Boys", 50122: "ŠK Slovan Bratislava", 50123: "AS Monaco",
+    50147: "AC Sparta Praha", 50060: "Aston Villa", 50081: "Bologna",
+    50061: "Stade Brestois 29", 50139: "VfB Stuttgart", 50148: "LASK"
+}
+
+def fetch_uefa_league_phase_squads():
+    """Queries UEFA's API directly for verified 36 League Phase squads."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json"
+    }
+    all_players = []
+
+    for team_id, team_name in UEFA_LEAGUE_PHASE_TEAMS.items():
+        url = f"https://comp.uefa.com/v2/teams/{team_id}/squad"
+        try:
+            res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                for p in data.get("players", []):
+                    num = p.get("shirtNumber") or p.get("jerseyNumber")
+                    if num:
+                        all_players.append({
+                            "Player": p.get("internationalName") or p.get("name"),
+                            "Team": team_name,
+                            "Number": str(num)
+                        })
+        except Exception:
+            continue
+
+    return pd.DataFrame(all_players) if all_players else None
+
 # --- SECTION 1: SQUAD DATA ---
 st.markdown("##### [01] ROSTER DATABASE SOURCE")
-db_input_method = st.radio("Input Mode", ["Paste Roster Text", "Upload File (Excel/CSV/JSON)"], horizontal=True)
+db_input_method = st.radio(
+    "Input Mode", 
+    ["Fetch Live League Phase Squads (UEFA.com)", "Paste Roster Text", "Upload File (Excel/CSV/JSON)"], 
+    horizontal=True
+)
 
 df_db = None
 
-if db_input_method == "Upload File (Excel/CSV/JSON)":
+if db_input_method == "Fetch Live League Phase Squads (UEFA.com)":
+    if st.button("⚡ FETCH 36 LEAGUE PHASE SQUADS FROM UEFA.COM"):
+        with st.spinner("Connecting directly to UEFA API to load active League Phase rosters..."):
+            df_fetched = fetch_uefa_league_phase_squads()
+            if df_fetched is not None and not df_fetched.empty:
+                st.session_state['df_db'] = df_fetched
+                st.success(f"✓ Loaded {len(df_fetched)} League Phase Players across {df_fetched['Team'].nunique()} Clubs!")
+            else:
+                st.error("Could not fetch UEFA League Phase data directly. Check network connection.")
+
+    if 'df_db' in st.session_state:
+        df_db = st.session_state['df_db']
+
+elif db_input_method == "Upload File (Excel/CSV/JSON)":
     db_file = st.file_uploader("Upload Excel (.xlsx), CSV, or JSON containing squad rosters", type=["xlsx", "csv", "json"])
     if db_file:
         try:
@@ -288,8 +343,25 @@ else:
         if df_db is not None and not df_db.empty:
             st.success(f"✓ Parsed {len(df_db)} Athletes successfully!")
 
+# --- DISPLAY LIVE SQUAD TABLE ON SCREEN ---
 if df_db is not None and not df_db.empty:
-    st.dataframe(df_db, use_container_width=True)
+    st.markdown("---")
+    st.markdown("### 📊 LIVE ROSTER DATABASE")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Athletes Loaded", len(df_db))
+    with col2:
+        st.metric("Total Clubs Represented", df_db['Team'].nunique())
+        
+    selected_club = st.selectbox("Filter Roster Screen by Club", ["ALL CLUBS"] + list(df_db['Team'].unique()))
+    
+    if selected_club != "ALL CLUBS":
+        display_df = df_db[df_db['Team'] == selected_club]
+    else:
+        display_df = df_db
+
+    st.dataframe(display_df, use_container_width=True, height=350)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -345,7 +417,6 @@ if images_to_process:
 # --- VISION AI RECOGNITION ---
 def identify_with_gemini(image_bytes, key):
     genai.configure(api_key=key)
-    # Updated to active model endpoint
     model = genai.GenerativeModel('gemini-3.6-flash')
     img = Image.open(io.BytesIO(image_bytes))
     prompt = (
