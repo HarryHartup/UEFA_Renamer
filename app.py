@@ -3,7 +3,7 @@ import os
 import re
 import unicodedata
 import zipfile
-import requests
+import cloudscraper
 from PIL import Image
 import google.generativeai as genai
 import pandas as pd
@@ -251,7 +251,7 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
         df = df[~df['Player'].str.lower().isin(['player', 'name', 'full name'])]
     return df
 
-# --- DIRECT UEFA LEAGUE PHASE API SCRAPER WITH SESSION HEADERS ---
+# --- DIRECT UEFA LEAGUE PHASE API SCRAPER ---
 UEFA_LEAGUE_PHASE_TEAMS = {
     50124: "AEK Athens", 50137: "Bodø/Glimt", 50051: "Real Madrid",
     50065: "Manchester City", 50030: "Bayern Munich", 50043: "Paris Saint-Germain",
@@ -268,22 +268,21 @@ UEFA_LEAGUE_PHASE_TEAMS = {
 }
 
 def fetch_uefa_league_phase_squads():
-    """Directly queries UEFA's backend with full browser impersonation headers."""
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Origin": "https://www.uefa.com",
-        "Referer": "https://www.uefa.com/uefachampionsleague/clubs/"
-    })
+    """Queries UEFA's backend bypassing Cloudflare anti-bot protection."""
+    scraper = cloudscraper.create_scraper(
+        browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True
+        }
+    )
     
     all_players = []
 
     for team_id, team_name in UEFA_LEAGUE_PHASE_TEAMS.items():
         url = f"https://comp.uefa.com/v2/teams/{team_id}/squad"
         try:
-            res = session.get(url, timeout=8)
+            res = scraper.get(url, timeout=10)
             if res.status_code == 200:
                 data = res.json()
                 for p in data.get("players", []):
@@ -299,7 +298,6 @@ def fetch_uefa_league_phase_squads():
 
     return pd.DataFrame(all_players) if all_players else None
 
-
 # --- SECTION 1: SQUAD DATA ---
 st.markdown("##### [01] ROSTER DATABASE SOURCE")
 db_input_method = st.radio(
@@ -312,13 +310,13 @@ df_db = None
 
 if db_input_method == "Fetch Live League Phase Squads (UEFA.com)":
     if st.button("⚡ FETCH 36 LEAGUE PHASE SQUADS FROM UEFA.COM"):
-        with st.spinner("Connecting directly to UEFA API to load active League Phase rosters..."):
+        with st.spinner("Connecting directly to UEFA API (via cloudscraper) to load active League Phase rosters..."):
             df_fetched = fetch_uefa_league_phase_squads()
             if df_fetched is not None and not df_fetched.empty:
                 st.session_state['df_db'] = df_fetched
                 st.success(f"✓ Loaded {len(df_fetched)} League Phase Players across {df_fetched['Team'].nunique()} Clubs!")
             else:
-                st.error("Could not fetch UEFA League Phase data directly. Check network connection.")
+                st.error("Could not fetch UEFA League Phase data. Cloudflare may still be blocking the request on Streamlit Cloud.")
 
     if 'df_db' in st.session_state:
         df_db = st.session_state['df_db']
