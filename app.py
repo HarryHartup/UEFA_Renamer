@@ -242,22 +242,19 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
     ]
 
     # MAGICAL SQUISHED TEXT PARSER
-    # If the text has very few newlines but contains team names, it's the squished copy-paste block
     if text.count('\n') < 5 and any(t in text for t in teams_list):
         cleaned_text = text.replace("PlayerTeamNumber", "").strip()
         team_pattern = "|".join(map(re.escape, teams_list))
-        # Regex looks for: (Any characters) (Exact Team Name) (Any Numbers)
         pattern = rf"([A-Za-zÀ-ÿ\s\-\'\.]+)({team_pattern})(\d+)"
         matches = re.findall(pattern, cleaned_text)
         
         if matches:
             rows = [{"Player": m[0].strip(), "Team": m[1], "Number": m[2]} for m in matches]
             df = pd.DataFrame(rows)
-            # Clean up residual artifacts in names caused by no-space pasting
             df['Player'] = df['Player'].apply(lambda x: re.sub(r'^\d+', '', x).strip())
             return df[~df['Player'].str.lower().isin(['player', 'name', 'full name'])]
 
-    # STANDARD LINE-BY-LINE PARSER (Fallback)
+    # STANDARD LINE-BY-LINE PARSER
     lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
     rows = []
     for line in lines:
@@ -378,6 +375,7 @@ else:
             st.success(f"✓ Parsed {len(df_db)} Athletes successfully from raw text!")
 
 # --- ISOLATE ROSTER BY TARGET TEAM ---
+target_team = ""
 if df_db is not None and not df_db.empty:
     st.markdown("### 🎯 ACTIVE TEAM FILTER")
     target_team = st.text_input("Type Team Name to isolate matching from the Master Database (leave blank to search all)", placeholder="e.g. Aston Villa")
@@ -408,7 +406,22 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # --- SECTION 2: ASSETS & FOLDERS ---
 st.markdown("##### [02] MEDIA ASSETS & FOLDERS")
-asset_input_method = st.radio("Asset Source", ["Local Folder Directory Path", "Drag & Drop Files / .ZIP Archive"], horizontal=True)
+
+# STATE MANAGEMENT FOR THE CLEAR BUTTON
+if 'uploader_key' not in st.session_state:
+    st.session_state['uploader_key'] = 0
+if 'folder_path_val' not in st.session_state:
+    st.session_state['folder_path_val'] = r"C:\Users\Hawk-Eye\Pictures\RAW Images V2"
+
+c1, c2 = st.columns([0.85, 0.15])
+with c1:
+    asset_input_method = st.radio("Asset Source", ["Local Folder Directory Path", "Drag & Drop Files / .ZIP Archive"], horizontal=True)
+with c2:
+    st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+    if st.button("🗑️ CLEAR ALL"):
+        st.session_state['folder_path_val'] = ""
+        st.session_state['uploader_key'] += 1
+        st.rerun()
 
 images_to_process = {}
 local_folder_path = None
@@ -417,7 +430,8 @@ if asset_input_method == "Drag & Drop Files / .ZIP Archive":
     uploaded_files = st.file_uploader(
         "Drop Individual Images OR a .ZIP Archive",
         type=["zip", "png", "jpg", "jpeg", "webp"],
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        key=f"file_uploader_{st.session_state['uploader_key']}"
     )
     if uploaded_files:
         for f in uploaded_files:
@@ -434,7 +448,11 @@ if asset_input_method == "Drag & Drop Files / .ZIP Archive":
             elif f.name.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
                 images_to_process[f.name] = f.read()
 else:
-    folder_path = st.text_input("Paste Local Folder Path", value=r"C:\Users\Hawk-Eye\Pictures\RAW Images V2", placeholder="e.g. C:/Users/Hawk-Eye/Pictures/RAW Images")
+    folder_path = st.text_input(
+        "Paste Local Folder Path", 
+        key="folder_path_val", 
+        placeholder="e.g. C:/Users/Hawk-Eye/Pictures/RAW Images"
+    )
     if folder_path and os.path.exists(folder_path):
         local_folder_path = folder_path
         for root, _, files in os.walk(folder_path):
@@ -571,9 +589,24 @@ if st.button("EXECUTE SCAN ENGINE"):
         else:
             st.success("🎉 Perfect match! No extra images and no missing players.")
 
+        # --- DYNAMIC EXPORT RENAMING LOGIC ---
         if len(final_matched) > 0:
+            
+            # Determine dynamic team name for exports
+            unique_teams = df_db['Team'].unique()
+            if len(unique_teams) == 1:
+                raw_team = unique_teams[0]
+            elif target_team:
+                raw_team = target_team
+            else:
+                raw_team = "UCL Teams"
+                
+            # Sanitize for file system (e.g. Bodø/Glimt -> Bodø-Glimt)
+            safe_team_name = re.sub(r'[\\/*?:"<>|]', "-", raw_team).strip()
+
             if local_folder_path and asset_input_method == "Local Folder Directory Path":
-                output_dir = os.path.abspath(local_folder_path.rstrip("/\\") + "_RENAMED")
+                parent_dir = os.path.dirname(os.path.abspath(local_folder_path))
+                output_dir = os.path.join(parent_dir, f"{safe_team_name} Renamed")
                 os.makedirs(output_dir, exist_ok=True)
                 for img_path, (player_row, img_bytes) in final_matched.items():
                     folder_dir = os.path.dirname(img_path)
@@ -596,8 +629,8 @@ if st.button("EXECUTE SCAN ENGINE"):
                         out_path = os.path.join(folder_dir, new_filename) if folder_dir else new_filename
                         zip_out.writestr(out_path, img_bytes)
                 st.download_button(
-                    label="📦 DOWNLOAD RENAMED ZIP ARCHIVE",
+                    label=f"📦 DOWNLOAD {safe_team_name.upper()} ZIP",
                     data=zip_buffer.getvalue(),
-                    file_name="UCL_Renamed_Assets.zip",
+                    file_name=f"{safe_team_name} Renamed.zip",
                     mime="application/zip"
                 )
