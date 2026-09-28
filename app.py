@@ -251,7 +251,7 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
         df = df[~df['Player'].str.lower().isin(['player', 'name', 'full name'])]
     return df
 
-# --- PROXY-ENABLED UEFA LEAGUE PHASE API SCRAPER ---
+# --- DYNAMIC UI UPDATING UEFA LEAGUE PHASE API SCRAPER ---
 UEFA_LEAGUE_PHASE_TEAMS = {
     50124: "AEK Athens", 50137: "Bodø/Glimt", 50051: "Real Madrid",
     50065: "Manchester City", 50030: "Bayern Munich", 50043: "Paris Saint-Germain",
@@ -267,27 +267,27 @@ UEFA_LEAGUE_PHASE_TEAMS = {
     50061: "Stade Brestois 29", 50139: "VfB Stuttgart", 50148: "LASK"
 }
 
-def fetch_uefa_league_phase_squads():
-    """Queries UEFA's backend using public CORS proxies to bypass Streamlit IP blocks."""
+def fetch_uefa_league_phase_squads_live(status_container, table_container, log_container):
+    """Fetches squads with detailed error logging for timeouts and HTTP errors."""
     all_players = []
+    error_logs = []
     
-    # We use two proxy gateways as a fail-safe
     proxies = [
-        "https://corsproxy.io/?url=",
-        "https://api.allorigins.win/raw?url="
+        ("CorsProxy.io", "https://corsproxy.io/?url="),
+        ("AllOrigins", "https://api.allorigins.win/raw?url=")
     ]
 
-    progress_text = st.empty()
-    
     for idx, (team_id, team_name) in enumerate(UEFA_LEAGUE_PHASE_TEAMS.items()):
-        progress_text.text(f"Fetching {team_name} ({idx+1}/{len(UEFA_LEAGUE_PHASE_TEAMS)})...")
+        status_container.info(f"📡 Fetching Team {idx+1}/{len(UEFA_LEAGUE_PHASE_TEAMS)}: **{team_name}**")
         target_url = f"https://comp.uefa.com/v2/teams/{team_id}/squad"
         
         success = False
-        for proxy in proxies:
+        team_errors = []
+        
+        for proxy_name, proxy_url in proxies:
             if success: break
             try:
-                res = requests.get(f"{proxy}{target_url}", timeout=8)
+                res = requests.get(f"{proxy_url}{target_url}", timeout=5)
                 if res.status_code == 200:
                     data = res.json()
                     for p in data.get("players", []):
@@ -299,10 +299,29 @@ def fetch_uefa_league_phase_squads():
                                 "Number": str(num)
                             })
                     success = True
-            except Exception:
-                pass
+                else:
+                    team_errors.append(f"[{proxy_name}] HTTP {res.status_code}")
+            except requests.exceptions.Timeout:
+                team_errors.append(f"[{proxy_name}] Timeout (5s)")
+            except requests.exceptions.ConnectionError:
+                team_errors.append(f"[{proxy_name}] Connection Refused")
+            except Exception as e:
+                team_errors.append(f"[{proxy_name}] {type(e).__name__}")
                 
-    progress_text.empty()
+        if not success:
+            error_logs.append(f"❌ {team_name} Failed | " + " | ".join(team_errors))
+            
+        if all_players:
+            temp_df = pd.DataFrame(all_players)
+            table_container.dataframe(temp_df, use_container_width=True, height=250)
+
+    status_container.empty()
+    
+    # Display the structured error logs if any teams failed completely
+    if error_logs:
+        with log_container.expander("🛠️ Network Diagnostic Logs (Failed Teams)", expanded=True):
+            st.code("\n".join(error_logs), language="text")
+            
     return pd.DataFrame(all_players) if all_players else None
 
 # --- SECTION 1: SQUAD DATA ---
@@ -316,14 +335,24 @@ db_input_method = st.radio(
 df_db = None
 
 if db_input_method == "Fetch Live League Phase Squads (UEFA.com)":
+    
+    live_status_ui = st.empty()
+    live_table_ui = st.empty()
+    live_log_ui = st.empty()
+    
     if st.button("⚡ FETCH 36 LEAGUE PHASE SQUADS FROM UEFA.COM"):
-        with st.spinner("Routing through proxy edge nodes to bypass Cloudflare..."):
-            df_fetched = fetch_uefa_league_phase_squads()
-            if df_fetched is not None and not df_fetched.empty:
-                st.session_state['df_db'] = df_fetched
-                st.success(f"✓ Loaded {len(df_fetched)} League Phase Players across {df_fetched['Team'].nunique()} Clubs!")
+        df_fetched = fetch_uefa_league_phase_squads_live(live_status_ui, live_table_ui, live_log_ui)
+        
+        if df_fetched is not None and not df_fetched.empty:
+            st.session_state['df_db'] = df_fetched
+            missing_teams_count = len(UEFA_LEAGUE_PHASE_TEAMS) - df_fetched['Team'].nunique()
+            
+            if missing_teams_count > 0:
+                st.warning(f"⚠️ Warning: Completed with partial success. Loaded {len(df_fetched)} players across {df_fetched['Team'].nunique()} Clubs. {missing_teams_count} clubs timed out and were skipped (check Diagnostic Logs).")
             else:
-                st.error("Could not fetch UEFA League Phase data. Both proxies timed out.")
+                st.success(f"✓ Total Victory: Loaded {len(df_fetched)} League Phase Players across all 36 Clubs!")
+        else:
+            st.error("Could not fetch UEFA League Phase data. All proxy requests timed out (check Diagnostic Logs).")
 
     if 'df_db' in st.session_state:
         df_db = st.session_state['df_db']
@@ -355,7 +384,7 @@ else:
             st.success(f"✓ Parsed {len(df_db)} Athletes successfully!")
 
 # --- DISPLAY LIVE SQUAD TABLE ON SCREEN ---
-if df_db is not None and not df_db.empty:
+if df_db is not None and not df_db.empty and db_input_method != "Fetch Live League Phase Squads (UEFA.com)":
     st.markdown("---")
     st.markdown("### 📊 LIVE ROSTER DATABASE")
     
@@ -373,6 +402,14 @@ if df_db is not None and not df_db.empty:
         display_df = df_db
 
     st.dataframe(display_df, use_container_width=True, height=350)
+elif df_db is not None and not df_db.empty:
+    st.markdown("---")
+    st.markdown("### 📊 LIVE ROSTER DATABASE")
+    selected_club = st.selectbox("Filter Roster Screen by Club", ["ALL CLUBS"] + list(df_db['Team'].unique()))
+    
+    if selected_club != "ALL CLUBS":
+        display_df = df_db[df_db['Team'] == selected_club]
+        st.dataframe(display_df, use_container_width=True, height=350)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -522,8 +559,13 @@ if st.button("EXECUTE SCAN ENGINE"):
                             player_matched = row
                             matched_row_idx = db_idx
                             break
+                            
                 except Exception as e:
-                    st.warning(f"AI bypass on {filename}: {e}")
+                    # Capture exact error types for debugging API rate limits/blocks
+                    error_msg = f"HTTP/API Error: {type(e).__name__} - {str(e)}"
+                    st.warning(f"⚠️ AI bypass on `{filename}`: {error_msg}")
+                    unmatched_images.append(img_path)
+                    continue
 
                 if player_matched is not None:
                     final_matched[img_path] = (player_matched, img_bytes)
