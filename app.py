@@ -3,7 +3,7 @@ import os
 import re
 import unicodedata
 import zipfile
-import cloudscraper
+import requests
 from PIL import Image
 import google.generativeai as genai
 import pandas as pd
@@ -251,7 +251,7 @@ def parse_pasted_text(text, default_team="Bodø/Glimt"):
         df = df[~df['Player'].str.lower().isin(['player', 'name', 'full name'])]
     return df
 
-# --- DIRECT UEFA LEAGUE PHASE API SCRAPER ---
+# --- PROXY-ENABLED UEFA LEAGUE PHASE API SCRAPER ---
 UEFA_LEAGUE_PHASE_TEAMS = {
     50124: "AEK Athens", 50137: "Bodø/Glimt", 50051: "Real Madrid",
     50065: "Manchester City", 50030: "Bayern Munich", 50043: "Paris Saint-Germain",
@@ -268,34 +268,41 @@ UEFA_LEAGUE_PHASE_TEAMS = {
 }
 
 def fetch_uefa_league_phase_squads():
-    """Queries UEFA's backend bypassing Cloudflare anti-bot protection."""
-    scraper = cloudscraper.create_scraper(
-        browser={
-            'browser': 'chrome',
-            'platform': 'windows',
-            'desktop': True
-        }
-    )
-    
+    """Queries UEFA's backend using public CORS proxies to bypass Streamlit IP blocks."""
     all_players = []
+    
+    # We use two proxy gateways as a fail-safe
+    proxies = [
+        "https://corsproxy.io/?url=",
+        "https://api.allorigins.win/raw?url="
+    ]
 
-    for team_id, team_name in UEFA_LEAGUE_PHASE_TEAMS.items():
-        url = f"https://comp.uefa.com/v2/teams/{team_id}/squad"
-        try:
-            res = scraper.get(url, timeout=10)
-            if res.status_code == 200:
-                data = res.json()
-                for p in data.get("players", []):
-                    num = p.get("shirtNumber") or p.get("jerseyNumber")
-                    if num:
-                        all_players.append({
-                            "Player": p.get("internationalName") or p.get("name"),
-                            "Team": team_name,
-                            "Number": str(num)
-                        })
-        except Exception:
-            continue
-
+    progress_text = st.empty()
+    
+    for idx, (team_id, team_name) in enumerate(UEFA_LEAGUE_PHASE_TEAMS.items()):
+        progress_text.text(f"Fetching {team_name} ({idx+1}/{len(UEFA_LEAGUE_PHASE_TEAMS)})...")
+        target_url = f"https://comp.uefa.com/v2/teams/{team_id}/squad"
+        
+        success = False
+        for proxy in proxies:
+            if success: break
+            try:
+                res = requests.get(f"{proxy}{target_url}", timeout=8)
+                if res.status_code == 200:
+                    data = res.json()
+                    for p in data.get("players", []):
+                        num = p.get("shirtNumber") or p.get("jerseyNumber")
+                        if num:
+                            all_players.append({
+                                "Player": p.get("internationalName") or p.get("name"),
+                                "Team": team_name,
+                                "Number": str(num)
+                            })
+                    success = True
+            except Exception:
+                pass
+                
+    progress_text.empty()
     return pd.DataFrame(all_players) if all_players else None
 
 # --- SECTION 1: SQUAD DATA ---
@@ -310,13 +317,13 @@ df_db = None
 
 if db_input_method == "Fetch Live League Phase Squads (UEFA.com)":
     if st.button("⚡ FETCH 36 LEAGUE PHASE SQUADS FROM UEFA.COM"):
-        with st.spinner("Connecting directly to UEFA API (via cloudscraper) to load active League Phase rosters..."):
+        with st.spinner("Routing through proxy edge nodes to bypass Cloudflare..."):
             df_fetched = fetch_uefa_league_phase_squads()
             if df_fetched is not None and not df_fetched.empty:
                 st.session_state['df_db'] = df_fetched
                 st.success(f"✓ Loaded {len(df_fetched)} League Phase Players across {df_fetched['Team'].nunique()} Clubs!")
             else:
-                st.error("Could not fetch UEFA League Phase data. Cloudflare may still be blocking the request on Streamlit Cloud.")
+                st.error("Could not fetch UEFA League Phase data. Both proxies timed out.")
 
     if 'df_db' in st.session_state:
         df_db = st.session_state['df_db']
